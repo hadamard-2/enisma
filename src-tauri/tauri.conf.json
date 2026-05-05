@@ -12,9 +12,10 @@
   "app": {
     "windows": [
       {
-        "title": "hear-book",
+        "title": "HearBook",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "maximized": true
       }
     ],
     "security": {

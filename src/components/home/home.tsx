@@ -90,7 +90,7 @@ export function Home({
           <span className="grid size-7 place-items-center rounded-md border border-ink bg-ink text-paper">
             <AudioLines size={16} />
           </span>
-          <span className="font-sans text-[21px] font-medium tracking-tight text-ink">
+          <span className="font-sans text-lg font-medium tracking-tight text-ink">
             HearBook
           </span>
         </div>

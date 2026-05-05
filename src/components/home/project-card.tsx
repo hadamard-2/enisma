@@ -1,15 +1,8 @@
 import { Clock, MoreHorizontal } from "lucide-react";
 import type { Project } from "@/lib/data";
 import { Card } from "@/components/ui/card";
-import { LangTag } from "@/components/ui/lang-tag";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusPill } from "@/components/ui/status-pill";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { ProjectCover } from "./project-cover";
 
 export function ProjectCard({
@@ -29,27 +22,18 @@ export function ProjectCard({
       <ProjectCover project={project} />
 
       <div className="px-1 pt-3 pb-1">
-        <div className="mb-1 flex items-center justify-between">
-          <LangTag lang={project.language} />
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-h-10 flex-1 font-serif text-base font-medium leading-tight text-ink line-clamp-2">
+            {project.title}
+          </div>
           <button
             onClick={(e) => e.stopPropagation()}
-            className="cursor-pointer rounded p-1 text-ink-3"
+            className="-mt-0.5 cursor-pointer rounded p-1 text-ink-3"
             aria-label="More options"
           >
             <MoreHorizontal size={16} />
           </button>
         </div>
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="mt-1.5 min-h-10 font-serif text-base font-medium leading-tight text-ink line-clamp-2">
-                {project.title}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="top">{project.title}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
 
         <div className="mt-3.5">
           <div className="mb-3 flex items-center justify-between text-xs text-ink-2">
