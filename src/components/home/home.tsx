@@ -12,7 +12,8 @@ import {
   Sun,
   Upload,
 } from "lucide-react";
-import { PROJECTS, type Project } from "@/lib/data";
+import { useNavigate } from "react-router-dom";
+import { PROJECTS } from "@/lib/data";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -51,11 +52,8 @@ const NAV_ITEMS: {
   { label: "Completed", key: "Completed", icon: Check, count: 2 },
 ];
 
-export function Home({
-  onOpenProject,
-}: {
-  onOpenProject?: (p: Project) => void;
-}) {
+export function Home() {
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("All");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "title" | "progress">("recent");
@@ -214,7 +212,11 @@ export function Home({
         <div className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-5">
           <NewProjectTile />
           {filtered.map((p) => (
-            <ProjectCard key={p.id} project={p} onOpen={() => onOpenProject?.(p)} />
+            <ProjectCard
+              key={p.id}
+              project={p}
+              onOpen={() => navigate(`/project/${p.id}`)}
+            />
           ))}
         </div>
       </main>

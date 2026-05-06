@@ -1,13 +1,7 @@
 import type { ProjectStatus } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
-type PageStatus = "reviewed" | "pending" | "skipped";
-type Status = ProjectStatus | PageStatus;
-
-const MAP: Record<Status, { bg: string; fg: string; dot: string; label: string }> = {
-  reviewed: { bg: "bg-teal-soft", fg: "text-teal-ink", dot: "bg-teal", label: "Reviewed" },
-  pending: { bg: "bg-amber-soft", fg: "text-amber-ink", dot: "bg-amber", label: "Pending" },
-  skipped: { bg: "bg-slate-soft", fg: "text-ink-3", dot: "bg-slate-x", label: "Skipped" },
+const MAP: Record<ProjectStatus, { bg: string; fg: string; dot: string; label: string }> = {
   done: { bg: "bg-teal-soft", fg: "text-teal-ink", dot: "bg-teal", label: "Complete" },
   "in-progress": { bg: "bg-amber-soft", fg: "text-amber-ink", dot: "bg-amber", label: "In progress" },
   new: { bg: "bg-paper-2", fg: "text-ink-3", dot: "bg-ink-4", label: "Not started" },
@@ -17,7 +11,7 @@ export function StatusPill({
   status,
   size = "md",
 }: {
-  status: Status;
+  status: ProjectStatus;
   size?: "sm" | "md";
 }) {
   const s = MAP[status];
