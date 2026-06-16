@@ -6,6 +6,8 @@ A desktop app for turning printed textbooks into audiobooks. Import a scanned te
 
 Enisma is aimed at making educational material more accessible — its sample content is drawn from Ethiopian school textbooks across English, Amharic, Tigrinya, and Oromo.
 
+Enisma is designed to run **fully offline**. Apart from a one-time model download on first launch, the entire pipeline — OCR, text-to-speech, and export — runs on-device with no network connection required, and your textbooks never leave your machine.
+
 > **Status:** early development. The full front-end is built and working against mock data; the backend (PDF import, OCR, TTS, export, persistence) is not yet implemented. See [Roadmap](#roadmap).
 
 ## Features
@@ -75,10 +77,11 @@ src-tauri/                Tauri (Rust) backend
 
 ## Roadmap
 
-The interface is in place; the engine behind it is not. Planned work:
+The interface is in place; the engine behind it is not. Every item below is built to run on-device, in keeping with the fully-offline goal above — OCR and TTS use local models, not cloud services:
 
 - [ ] PDF import and rendering
-- [ ] OCR / text extraction
-- [ ] Text-to-speech integration
+- [ ] OCR / text extraction (on-device)
+- [ ] Text-to-speech integration (on-device)
+- [ ] First-run model download and management
 - [ ] Audiobook export
 - [ ] Persistent project storage (currently all state is in-memory)
