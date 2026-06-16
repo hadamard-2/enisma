@@ -89,7 +89,7 @@ export function Home() {
             <AudioLines size={16} />
           </span>
           <span className="font-sans text-lg font-medium tracking-tight text-ink">
-            HearBook
+            Enisma
           </span>
         </div>
 
