@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Freeze the Python sidecar with PyInstaller and install it as a Tauri externalBin.
+#
+# Tauri resolves externalBin entries by appending the host target triple, so the
+# frozen binary must land at src-tauri/binaries/hearbook-sidecar-<triple>[.exe].
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SIDECAR_DIR="$REPO_ROOT/sidecar"
+BIN_DIR="$REPO_ROOT/src-tauri/binaries"
+
+TRIPLE="$(rustc --print host-tuple)"
+EXT=""
+case "$TRIPLE" in
+  *windows*) EXT=".exe" ;;
+esac
+
+echo "Building sidecar for $TRIPLE ..."
+cd "$SIDECAR_DIR"
+uv sync
+uv run pyinstaller --clean --noconfirm hearbook_sidecar.spec
+
+mkdir -p "$BIN_DIR"
+cp "$SIDECAR_DIR/dist/hearbook-sidecar$EXT" "$BIN_DIR/hearbook-sidecar-$TRIPLE$EXT"
+echo "Installed: $BIN_DIR/hearbook-sidecar-$TRIPLE$EXT"

@@ -1,0 +1,5 @@
+# Frozen sidecar binaries are build artifacts — regenerate with
+# scripts/build-sidecar.sh. Keep this dir (referenced by externalBin) but not
+# the platform-specific binaries themselves.
+*
+!.gitignore

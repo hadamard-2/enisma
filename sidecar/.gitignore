@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+# PyInstaller outputs (the .spec is committed; its artifacts are not)
+build/
+dist/
