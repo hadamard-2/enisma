@@ -60,7 +60,7 @@ sidecar/
 | `GET /models/status` | Which model sets are present locally. |
 | `POST /models/download` | Fetch missing models; **SSE** progress stream. |
 | `POST /extract` | Body `{pdf_path, ocr_engine, langs, force_full_page_ocr}`. **SSE** stream of `{page_no, text, used_ocr}`. |
-| `GET /tts/voices?engine=kokoro` | Kokoro voice list (`list_voices()`). |
+| `GET /tts/voices?engine=kokoro` | Kokoro voice list (`get_voices()`). |
 | `POST /tts` | Body `{engine, lang, voice, text}` → audio bytes (page preview and export reuse this). |
 
 Rust spawns the sidecar at startup, reads the `port`/`ready` handshake from stdout, passes the model dir and bearer token via env/args, waits for `/health`, restarts on crash, and kills it on app exit. The frontend never talks to the sidecar directly — it calls typed Tauri commands that proxy to it (keeps the token/port internal, avoids CORS).
@@ -81,11 +81,12 @@ Language → engine matrix:
 
 | Language | Engine | Voices | Notes |
 | --- | --- | --- | --- |
-| English | Kokoro (`kokoro-onnx`) | **Multiple** (`list_voices()`, default e.g. `af_bella`) | 24 kHz. The settings-panel voice dropdown is real here. |
+| English | Kokoro (`kokoro-onnx`) | **Multiple** (`get_voices()`, default e.g. `af_heart`) | 24 kHz. The settings-panel voice dropdown is real here. Needs a G2P step — see below. |
 | Amharic | MMS-TTS (`sherpa-onnx` VITS) | Single-speaker | 16 kHz. **`uroman(amh)` romanization** before synthesis (Ge'ez → Latin; MMS vocab is Latin-only). |
 | Tigrinya | MMS-TTS | Single-speaker | 16 kHz. `uroman(tir)`. |
 | Afaan Oromo | MMS-TTS | Single-speaker | 16 kHz. `uroman(orm)` (Latin/Qubee → near-identity). |
 
+- **English phonemization (G2P) is its own step.** Kokoro synthesizes from *phonemes*, not text. `kokoro-onnx` (v1.0+) recommends **misaki** as the primary English G2P with **eSpeak-NG as misaki's fallback** for out-of-vocabulary words: run G2P in `tts_kokoro.py`, then call `kokoro.create(phonemes, voice, is_phonemes=True)`. So the English path must bundle misaki (+ its data) **and** eSpeak-NG (library + data) offline — not just the model/voices files. A lighter alternative is the built-in `Tokenizer().phonemize()` (eSpeak-NG only, no misaki) at some English-quality cost. (The MMS languages don't use this; they romanize via `uroman` instead.)
 - For the MMS languages the voice selector should be hidden/disabled (single-speaker), matching the product note.
 - The `tts_mms.py` engine is adapted directly from the reference `../amharic-speech-models/tts.py`: load VITS on CPU, romanize, strip characters outside the model vocab, return PCM. Generalize the hardcoded `amh` to a per-language model dir + `lcode`.
 - **Rate** maps to each engine's speed parameter. **Pitch is dropped** — neither Kokoro nor MMS/VITS exposes it natively and we won't fake it; the pitch slider is removed from the settings panel.
@@ -142,7 +143,8 @@ A thin installer; on first launch (or when `GET /models/status` reports gaps), f
 
 - docling artifacts (layout, tableformer, etc.)
 - EasyOCR models for Latin scripts (English/Oromo fallback)
-- Kokoro ONNX model + voices
+- Kokoro: model (`kokoro-v1.0.onnx`) + voices binary (`voices-v1.0.bin` — one blob holding every voice's style vectors, not a file per voice)
+- English phonemizer for Kokoro: **misaki** English G2P data/dictionary **+ eSpeak-NG** library & data (misaki's out-of-vocabulary fallback)
 - 3 × MMS models (am / ti / om — `model.onnx` + `tokens.txt`)
 - `uroman` data (ships with the pip package)
 
@@ -180,9 +182,10 @@ No new screens. Hook points into existing components:
 
 ## Risks & things to verify at implementation time
 
-- **Pin every package/API against the actually-installed version** before coding (per project convention): `docling`, `kokoro-onnx` (vs the `kokoro` PyTorch package), `sherpa-onnx`, `uroman`, and the MP3 encoder. Treat the names here as intent to verify, not gospel.
+- **Pin every package/API against the actually-installed version** before coding (per project convention): `docling`, `kokoro-onnx` (vs the `kokoro` PyTorch package; note its API is `get_voices()` and `create(..., is_phonemes=True)`), `misaki` (English G2P) + `espeak-ng`, `sherpa-onnx`, `uroman`, and the MP3 encoder. Treat the names here as intent to verify, not gospel.
 - **Bundle size.** docling pulls CPU PyTorch; PyInstaller + ONNX Runtime + Torch makes a large sidecar. Acceptable for desktop, but plan installer/runtime size and consider what's bundled vs first-run-downloaded.
 - **TTS romanization quality.** Validate `uroman` output for Amharic/Tigrinya (Ge'ez) and the Latin handling for Oromo on real textbook text; this is the TTS area most likely to need iteration.
+- **English G2P / phonemizer bundling.** The Kokoro path needs a phonemizer bundled offline — recommended misaki + eSpeak-NG fallback (or the lighter built-in eSpeak-only tokenizer). Verify the exact misaki extras (`misaki[en]`, the heavier `trf=True` transformer variant vs `trf=False`) and that PyInstaller actually collects misaki's data files **and** the eSpeak-NG library + data. This is the English analogue of the `uroman` romanization risk, and adds to bundle size.
 - **Download robustness is itself a feature.** Large files over flaky networks is the failure mode that most hurts an offline-first app's first impression — it's why the download handler above is specced in detail rather than treated as a `curl`.
 - **Sample-rate mismatch** (Kokoro 24 kHz vs MMS 16 kHz) is avoided by single-language books, but the export/encode path should assert one rate per book.
 - **Deferred — Ge'ez OCR.** Out of v0 by decision. Only revisit (and take on the Tesseract cross-platform bundling cost) if text-layer-less Amharic/Tigrinya PDFs turn out to be common in practice.
