@@ -1,5 +1,6 @@
 mod sidecar;
 mod db;
+mod project;
 
 use sidecar::SidecarState;
 use tauri::{Manager, RunEvent};
