@@ -205,6 +205,20 @@ function Editor({
     const page = textPageRef.current;
 
     if (text === savedTextRef.current) {
+      // The edit was reverted back to the stored baseline (backspace, undo)
+      // before its debounce fired, so the queued write is now superseded by
+      // nothing and must not go out. Scoped deliberately: only a pending that
+      // is still UNSENT and belongs to the page `text` itself belongs to is
+      // discarded. A pending for a page we have already left is a real edit
+      // waiting out its timer, and has to survive this branch.
+      const p = pendingRef.current;
+      if (p && !p.sent && p.page === page && p.projectId === project.id) {
+        pendingRef.current = null;
+        if (debounceRef.current !== null) {
+          window.clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+      }
       setSaved(true);
       return;
     }
