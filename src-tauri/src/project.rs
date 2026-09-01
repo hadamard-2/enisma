@@ -99,8 +99,8 @@ pub struct ProjectDetail {
     pub title: String,
     pub language: String,
     pub page_count: i64,
-    /// Absolute on disk. Resolved in Rust so the webview never does path
-    /// arithmetic; the frontend passes it straight to `convertFileSrc`.
+    /// Relative path as stored in the database. The Tauri command wrapper
+    /// resolves this to an absolute path before it reaches the webview.
     pub pdf_path: String,
     pub rate: f64,
     pub pages: Vec<PageMeta>,
@@ -148,10 +148,13 @@ pub fn save_page_text(
     page_no: i64,
     text: &str,
 ) -> rusqlite::Result<()> {
-    conn.execute(
+    let affected = conn.execute(
         "UPDATE pages SET edited_text = ?3 WHERE project_id = ?1 AND page_no = ?2",
         params![project_id, page_no, text],
     )?;
+    if affected == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
     touch(conn, project_id)
 }
 
@@ -161,10 +164,13 @@ pub fn set_page_done(
     page_no: i64,
     done: bool,
 ) -> rusqlite::Result<()> {
-    conn.execute(
+    let affected = conn.execute(
         "UPDATE pages SET done = ?3 WHERE project_id = ?1 AND page_no = ?2",
         params![project_id, page_no, if done { 1 } else { 0 }],
     )?;
+    if affected == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
     touch(conn, project_id)
 }
 
@@ -292,5 +298,38 @@ mod tests {
         let detail = get_project(&conn, "abc").unwrap();
         assert_eq!(detail.title, "New Title");
         assert_eq!(detail.language, "en", "language must be untouched");
+    }
+
+    #[test]
+    fn save_page_text_with_out_of_range_page_no_returns_error() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 2);
+        let result = save_page_text(&conn, "abc", 99, "text");
+        assert!(result.is_err(), "save_page_text should error for non-existent page");
+    }
+
+    #[test]
+    fn rejected_save_page_text_does_not_bump_updated_at() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 2);
+        let before: String = conn
+            .query_row("SELECT updated_at FROM projects WHERE id = 'abc'", [], |r| r.get(0))
+            .unwrap();
+        // Wait a tiny bit to ensure time difference if touch were called
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let result = save_page_text(&conn, "abc", 99, "text");
+        assert!(result.is_err());
+        let after: String = conn
+            .query_row("SELECT updated_at FROM projects WHERE id = 'abc'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(before, after, "updated_at must not be bumped on rejected write");
+    }
+
+    #[test]
+    fn set_page_done_with_unknown_project_id_returns_error() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 2);
+        let result = set_page_done(&conn, "nonexistent", 1, true);
+        assert!(result.is_err(), "set_page_done should error for non-existent project");
     }
 }
