@@ -202,6 +202,85 @@ fn touch(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+use tauri::State;
+
+use crate::{DataDir, Db};
+
+/// Commands are thin: they lock the connection and delegate. All domain logic
+/// lives in the functions above, which are tested without Tauri.
+#[tauri::command]
+pub fn list_projects_cmd(db: State<'_, Db>) -> Result<Vec<ProjectSummary>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    list_projects(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_project_cmd(db: State<'_, Db>, data: State<'_, DataDir>, id: String) -> Result<ProjectDetail, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut detail = get_project(&conn, &id).map_err(|e| e.to_string())?;
+    detail.pdf_path = data.0.join(&detail.pdf_path).to_string_lossy().into_owned();
+    Ok(detail)
+}
+
+#[tauri::command]
+pub fn import_project_cmd(
+    db: State<'_, Db>,
+    data: State<'_, DataDir>,
+    title: String,
+    language: String,
+    src_path: String,
+) -> Result<String, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    crate::import::import_project(
+        &mut conn,
+        &data.0,
+        &title,
+        &language,
+        std::path::Path::new(&src_path),
+    )
+}
+
+#[tauri::command]
+pub fn update_project_cmd(
+    db: State<'_, Db>,
+    id: String,
+    title: Option<String>,
+    language: Option<String>,
+    rate: Option<f64>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    update_project(&conn, &id, title.as_deref(), language.as_deref(), rate)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_page_cmd(db: State<'_, Db>, project_id: String, page_no: i64) -> Result<PageText, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    get_page(&conn, &project_id, page_no).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_page_text_cmd(
+    db: State<'_, Db>,
+    project_id: String,
+    page_no: i64,
+    text: String,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    save_page_text(&conn, &project_id, page_no, &text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_page_done_cmd(
+    db: State<'_, Db>,
+    project_id: String,
+    page_no: i64,
+    done: bool,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    set_page_done(&conn, &project_id, page_no, done).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
