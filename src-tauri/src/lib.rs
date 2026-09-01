@@ -2,6 +2,7 @@ mod sidecar;
 mod db;
 mod project;
 mod pdf;
+mod import;
 
 use sidecar::SidecarState;
 use tauri::{Manager, RunEvent};
