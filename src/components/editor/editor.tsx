@@ -75,21 +75,59 @@ function Editor({
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
   const savedTextRef = useRef("");
+  // Which page `text`/`savedTextRef` currently represent. Updated by the
+  // autosave effect below the moment it has actually processed a given
+  // `activePage`, which is what lets it tell "the user typed" apart from
+  // "the page changed" on the very next render (see that effect's comment).
+  const lastPageRef = useRef(activePage);
   const [saved, setSaved] = useState(true);
   const [view, setView] = useState<View>("split");
 
+  // Load the active page's text. Guards against out-of-order responses: if
+  // the page changes again before this fetch resolves, `cancelled` (captured
+  // per effect run) is already true by the time it does, so a late response
+  // for a page we've since left can never overwrite `text` out from under
+  // whatever page is now active.
   useEffect(() => {
+    let cancelled = false;
     getPage(project.id, activePage).then((p) => {
+      if (cancelled) return;
       const value = p.editedText ?? p.sourceText ?? "";
       savedTextRef.current = value;
       setText(value);
       setSaved(true);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [project.id, activePage]);
 
   // Autosave on a short debounce; this is what finally makes the panel's
   // "saved / unsaved changes" indicator tell the truth.
+  //
+  // This effect also re-runs the instant `activePage` changes — before the
+  // loader effect above has fetched the new page's text. At that moment
+  // `text` still holds the OUTGOING page's content while `activePage`
+  // already points at the new one; scheduling
+  // `savePageText(project.id, activePage, text)` in that state would write
+  // the old page's edit into the new page's row (or, if the load wins the
+  // race and text/savedTextRef sync up first, cancel the pending timer and
+  // discard the edit with nothing ever written). `lastPageRef` records which
+  // page this effect last actually processed, so a mismatch against
+  // `activePage` means "the page changed, not the text" — in which case we
+  // flush the edit immediately under the page it actually belongs to
+  // (`pageForThisText`) instead of scheduling anything under the new page.
   useEffect(() => {
+    const pageForThisText = lastPageRef.current;
+    lastPageRef.current = activePage;
+
+    if (pageForThisText !== activePage) {
+      if (text !== savedTextRef.current) {
+        savePageText(project.id, pageForThisText, text).catch(console.error);
+      }
+      return;
+    }
+
     if (text === savedTextRef.current) {
       setSaved(true);
       return;
@@ -129,7 +167,12 @@ function Editor({
   function toggleDone(n: number) {
     const next = !(pages.find((p) => p.pageNo === n)?.done ?? false);
     setPages((ps) => ps.map((p) => (p.pageNo === n ? { ...p, done: next } : p)));
-    setPageDone(project.id, n, next).catch(console.error);
+    setPageDone(project.id, n, next).catch((e) => {
+      console.error(e);
+      // Write failed — revert the optimistic flip so the panel and counts
+      // don't keep showing a state that was never actually persisted.
+      setPages((ps) => ps.map((p) => (p.pageNo === n ? { ...p, done: !next } : p)));
+    });
   }
 
   function gotoPage(delta: number) {
