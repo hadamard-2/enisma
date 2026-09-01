@@ -11,6 +11,7 @@ export function CenterPanel({
   text,
   setText,
   saved,
+  loadError,
   view,
 }: {
   page: number;
@@ -18,6 +19,8 @@ export function CenterPanel({
   text: string;
   setText: (t: string) => void;
   saved: boolean;
+  /** Non-null when this page's text could not be read; editing is blocked. */
+  loadError: string | null;
   view: View;
 }) {
   const wordCount = text.split(/\s+/).filter(Boolean).length;
@@ -49,22 +52,35 @@ export function CenterPanel({
           >
             <div className="mb-2 flex justify-between font-mono text-[10.5px] tracking-widest uppercase">
               <span className="text-ink-3">Extracted text · editable</span>
-              <span className={saved ? "text-ink-3" : "text-amber-ink"}>
-                {saved ? "saved" : "unsaved changes"}
+              <span
+                className={saved && !loadError ? "text-ink-3" : "text-amber-ink"}
+              >
+                {loadError ? "not loaded" : saved ? "saved" : "unsaved changes"}
               </span>
             </div>
             <div className="relative flex min-h-0 flex-1 flex-col rounded-xl border border-line bg-surface px-5 py-4 shadow-paper-sm">
-              {text === "" && (
-                <div className="pointer-events-none absolute px-1 font-serif text-base text-ink-3 italic">
-                  No extracted text yet — type here, or wait for extraction.
+              {loadError ? (
+                // No text was loaded, so there is no baseline to edit against.
+                // Showing an editable box here would invite typing that cannot
+                // be attributed to a page, and so cannot be saved.
+                <div className="min-h-0 flex-1 px-1 text-[12.5px] text-amber-ink">
+                  Could not load the text for page {page}: {loadError}
                 </div>
+              ) : (
+                <>
+                  {text === "" && (
+                    <div className="pointer-events-none absolute px-1 font-serif text-base text-ink-3 italic">
+                      No extracted text yet — type here, or wait for extraction.
+                    </div>
+                  )}
+                  <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    className="min-h-0 flex-1 resize-none border-0 bg-transparent font-serif text-base leading-relaxed text-ink outline-none"
+                    style={{ letterSpacing: "0.005em" }}
+                  />
+                </>
               )}
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="min-h-0 flex-1 resize-none border-0 bg-transparent font-serif text-base leading-relaxed text-ink outline-none"
-                style={{ letterSpacing: "0.005em" }}
-              />
               <div className="mt-2.5 flex justify-between border-t border-dashed border-line pt-2.5 text-[11px] text-ink-3">
                 <span>
                   {wordCount} words · ~{seconds}s spoken

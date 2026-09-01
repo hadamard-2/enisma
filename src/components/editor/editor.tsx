@@ -51,6 +51,15 @@ type PendingWrite = {
   text: string;
   /** Already handed to the write chain; kept so an identical re-queue is a no-op. */
   sent: boolean;
+  /**
+   * The text the page should end up holding once this write settles.
+   *
+   * Set only when an edit is reverted to the stored baseline after its write
+   * was already dispatched — too late to cancel. The write will land, so the
+   * revert has to be re-queued behind it or storage keeps the undone text
+   * while the screen shows it gone.
+   */
+  supersededBy?: string;
 };
 
 export function EditorRoute() {
@@ -67,7 +76,11 @@ export function EditorRoute() {
   if (missing) return <Navigate to="/" replace />;
   if (!project) return <div className="flex-1 bg-paper" />;
 
-  return <Editor project={project} onBack={() => navigate("/")} />;
+  // Keyed on the project so switching projects remounts rather than reusing
+  // the autosave state machine. Its in-flight guards compare page numbers, so
+  // a same-numbered page in a different project could otherwise be adopted as
+  // the baseline for text that came from the previous one.
+  return <Editor key={project.id} project={project} onBack={() => navigate("/")} />;
 }
 
 function Editor({
@@ -96,6 +109,7 @@ function Editor({
   // establishes "the text in state came from page N". Everything else reads it.
   const textPageRef = useRef<number | null>(null);
   const [saved, setSaved] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>("split");
 
   // ---- Autosave machinery -------------------------------------------------
@@ -107,6 +121,12 @@ function Editor({
   // dependency change: a pending write is cancelled only by being superseded,
   // and is flushed explicitly when we leave the page.
   const pendingRef = useRef<PendingWrite | null>(null);
+  // The write currently on the chain, if any. Separate from `pendingRef`
+  // because the two diverge: once a write is dispatched the user can type
+  // again, and the slot then holds the NEW edit while the old one is still
+  // travelling. A revert has to be able to find the travelling write to
+  // correct it, whichever of the two the slot happens to be holding.
+  const inFlightRef = useRef<PendingWrite | null>(null);
   const debounceRef = useRef<number | null>(null);
   // Every write is appended to this one chain, so `savePageText` calls are
   // invoked strictly in dispatch order and a slower earlier write can never
@@ -121,30 +141,65 @@ function Editor({
     const p = pendingRef.current;
     if (!p || p.sent) return;
     p.sent = true;
+    inFlightRef.current = p;
+
+    // Runs however this write settles. A write that was superseded while in
+    // flight has to be followed by the correction, or the revert is lost:
+    // the screen would show the reverted text while storage keeps what was
+    // written, and nothing on the way out of the page would notice.
+    const settle = () => {
+      if (inFlightRef.current === p) inFlightRef.current = null;
+      if (pendingRef.current === p) pendingRef.current = null;
+      if (p.supersededBy === undefined) return;
+      // Something newer already owns the queue. It was typed after the revert,
+      // so it — not this correction — is where the page should end up. (If it
+      // belongs to another page the correction is dropped rather than
+      // clobbering it; conservative, and it heals on the next edit here.)
+      if (pendingRef.current !== null) return;
+      pendingRef.current = {
+        projectId: p.projectId,
+        page: p.page,
+        text: p.supersededBy,
+        sent: false,
+      };
+      setSaved(false);
+      // Bounded: the follow-up carries no `supersededBy` of its own unless the
+      // user reverts again, which is a fresh edit, not a recursion.
+      sendPending();
+    };
+
     writeChainRef.current = writeChainRef.current
       .catch(() => {})
       .then(() => savePageText(p.projectId, p.page, p.text))
       .then(
         () => {
-          if (pendingRef.current === p) pendingRef.current = null;
           // Only adopt this as the saved baseline if `text` still belongs to
           // the page we just wrote; otherwise we would be comparing the page
           // now on screen against some other page's content.
-          if (textPageRef.current !== p.page) return;
-          savedTextRef.current = p.text;
-          setSaved(pendingRef.current === null);
+          if (textPageRef.current === p.page) {
+            savedTextRef.current = p.text;
+            setSaved(pendingRef.current === null || pendingRef.current === p);
+          }
+          settle();
         },
         (e: unknown) => {
           console.error(e);
           // Release the slot so a later effect run can queue the same text
           // again; the indicator stays on "unsaved changes" until one lands.
-          if (pendingRef.current === p) pendingRef.current = null;
+          settle();
         },
       );
   }, []);
 
   const queueEdit = useCallback(
     (projectId: string, page: number, value: string) => {
+      // A fresh edit on this page redefines where the page ends up, so a
+      // revert recorded against a write still in flight no longer applies —
+      // including when that edit re-types exactly what the in-flight write
+      // already carries and is handled by the no-op below.
+      const f = inFlightRef.current;
+      if (f && f.page === page && f.projectId === projectId) delete f.supersededBy;
+
       const p = pendingRef.current;
       if (p && p.projectId === projectId && p.page === page && p.text === value) {
         // Already queued, or already in flight. An effect re-run for an
@@ -167,21 +222,50 @@ function Editor({
     [sendPending],
   );
 
-  // Load the active page's text. Guards against out-of-order responses: if
-  // the page changes again before this fetch resolves, `cancelled` (captured
-  // per effect run) is already true by the time it does, so a late response
-  // for a page we've since left can never overwrite `text` out from under
-  // whatever page is now active.
+  // Load the active page's text.
+  //
+  // The read goes on the SAME chain as the writes, so it cannot start before
+  // this page's already-queued writes have settled. Without that ordering a
+  // fast 5 -> 6 -> 5 lets the page-5 read overtake the page-5 write still in
+  // flight: the read returns pre-edit text, `savedTextRef` and `text` both
+  // adopt it, and the next keystroke sends that stale textarea back over the
+  // edit. The added wait only ever follows a write that was already debounced.
+  //
+  // `cancelled` (captured per effect run) still guards against a response for
+  // a page we have since left overwriting whatever page is now active.
   useEffect(() => {
     let cancelled = false;
-    getPage(project.id, activePage).then((p) => {
-      if (cancelled) return;
-      const value = p.editedText ?? p.sourceText ?? "";
-      savedTextRef.current = value;
-      textPageRef.current = activePage;
-      setText(value);
-      setSaved(true);
-    });
+    const load = writeChainRef.current
+      .catch(() => {})
+      .then(() => (cancelled ? null : getPage(project.id, activePage)));
+    // Put the read back on the chain so a write queued behind it also waits,
+    // keeping reads and writes in one total order. Swallowing the rejection
+    // here keeps the chain usable; the handler below reports it.
+    writeChainRef.current = load.catch(() => {});
+    load.then(
+      (p) => {
+        if (cancelled || p === null) return;
+        const value = p.editedText ?? p.sourceText ?? "";
+        savedTextRef.current = value;
+        textPageRef.current = activePage;
+        setText(value);
+        setSaved(true);
+        setLoadError(null);
+      },
+      (e: unknown) => {
+        if (cancelled) return;
+        console.error(e);
+        // Nothing now describes this page, so nothing may claim to. Leaving
+        // the previous page's text in place would show it beside the new
+        // page's scan, labelled "saved", and file the next keystroke under
+        // the page it came from.
+        textPageRef.current = null;
+        savedTextRef.current = "";
+        setText("");
+        setSaved(true);
+        setLoadError(String(e));
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -219,6 +303,19 @@ function Editor({
           debounceRef.current = null;
         }
       }
+
+      // A write already on the chain cannot be cancelled — it will land, and
+      // it carries the text the user has just undone. Record where the page
+      // must end up so the completion re-queues it. Until that correction
+      // lands, storage and the screen disagree, so the indicator must not
+      // claim "saved".
+      const f = inFlightRef.current;
+      if (f && f.page === page && f.projectId === project.id) {
+        f.supersededBy = text;
+        setSaved(false);
+        return;
+      }
+
       setSaved(true);
       return;
     }
@@ -337,6 +434,14 @@ function Editor({
         cycleView(1);
         return;
       }
+      // Before the typing guard on purpose: the footer advertises this, and
+      // the user is in the textarea when they reach for it. Without the
+      // preventDefault the browser's own save dialog opens instead.
+      if (mod && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        sendPending();
+        return;
+      }
       if (isTypingTarget(e.target)) return;
       if (e.key === "ArrowUp") {
         e.preventDefault();
@@ -435,6 +540,7 @@ function Editor({
               text={text}
               setText={setText}
               saved={saved}
+              loadError={loadError}
               view={view}
             />
           </ResizablePanel>
