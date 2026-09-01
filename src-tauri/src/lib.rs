@@ -52,6 +52,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // Make sure the Python sidecar dies with the app rather than orphaning.
             if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
                 app_handle.state::<SidecarState>().shutdown();
             }

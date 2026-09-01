@@ -155,7 +155,7 @@ pub fn save_page_text(
     if affected == 0 {
         return Err(rusqlite::Error::QueryReturnedNoRows);
     }
-    touch(conn, project_id)
+    touch(conn, project_id).map(|_| ())
 }
 
 pub fn set_page_done(
@@ -171,35 +171,50 @@ pub fn set_page_done(
     if affected == 0 {
         return Err(rusqlite::Error::QueryReturnedNoRows);
     }
-    touch(conn, project_id)
+    touch(conn, project_id).map(|_| ())
 }
 
+/// Apply a partial patch to one project.
+///
+/// One transaction, so a patch is all-or-nothing: a failure part-way through
+/// cannot leave the row holding a new title next to an old language. And a
+/// patch that matches no project is an error rather than a silent no-op,
+/// matching `save_page_text` and `set_page_done`.
 pub fn update_project(
-    conn: &Connection,
+    conn: &mut Connection,
     id: &str,
     title: Option<&str>,
     language: Option<&str>,
     rate: Option<f64>,
 ) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
     if let Some(t) = title {
-        conn.execute("UPDATE projects SET title = ?2 WHERE id = ?1", params![id, t])?;
+        tx.execute("UPDATE projects SET title = ?2 WHERE id = ?1", params![id, t])?;
     }
     if let Some(l) = language {
-        conn.execute("UPDATE projects SET language = ?2 WHERE id = ?1", params![id, l])?;
+        tx.execute("UPDATE projects SET language = ?2 WHERE id = ?1", params![id, l])?;
     }
     if let Some(r) = rate {
-        conn.execute("UPDATE projects SET rate = ?2 WHERE id = ?1", params![id, r])?;
+        tx.execute("UPDATE projects SET rate = ?2 WHERE id = ?1", params![id, r])?;
     }
-    touch(conn, id)
+    // `touch` runs unconditionally against the same row, so its affected count
+    // is what distinguishes a real id from a bogus one — no matter which of the
+    // optional fields the caller supplied, or whether it supplied any.
+    if touch(&tx, id)? == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    tx.commit()
 }
 
 /// Bump `updated_at`, which drives library ordering and the relative-time label.
-fn touch(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+///
+/// Returns the number of project rows matched; callers use it to reject a write
+/// aimed at a project that does not exist.
+fn touch(conn: &Connection, id: &str) -> rusqlite::Result<usize> {
     conn.execute(
         "UPDATE projects SET updated_at = ?2 WHERE id = ?1",
         params![id, Utc::now().to_rfc3339()],
-    )?;
-    Ok(())
+    )
 }
 
 use tauri::State;
@@ -222,7 +237,12 @@ pub fn get_project_cmd(db: State<'_, Db>, data: State<'_, DataDir>, id: String) 
     Ok(detail)
 }
 
-#[tauri::command]
+/// `async` so this runs off the IPC dispatch thread. Import parses the whole
+/// PDF and then copies it, which is seconds of work on a large scan — long
+/// enough that a blocking command would freeze the window, spinner included.
+/// The body has no `.await`, so the `MutexGuard` it holds never spans a
+/// suspension point and the future stays `Send`.
+#[tauri::command(async)]
 pub fn import_project_cmd(
     db: State<'_, Db>,
     data: State<'_, DataDir>,
@@ -248,8 +268,8 @@ pub fn update_project_cmd(
     language: Option<String>,
     rate: Option<f64>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    update_project(&conn, &id, title.as_deref(), language.as_deref(), rate)
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    update_project(&mut conn, &id, title.as_deref(), language.as_deref(), rate)
         .map_err(|e| e.to_string())
 }
 
@@ -373,7 +393,7 @@ mod tests {
     fn update_project_applies_only_the_fields_present() {
         let mut conn = db::open_in_memory().unwrap();
         seed(&mut conn, "abc", 1);
-        update_project(&conn, "abc", Some("New Title"), None, None).unwrap();
+        update_project(&mut conn, "abc", Some("New Title"), None, None).unwrap();
         let detail = get_project(&conn, "abc").unwrap();
         assert_eq!(detail.title, "New Title");
         assert_eq!(detail.language, "en", "language must be untouched");
@@ -402,6 +422,51 @@ mod tests {
             .query_row("SELECT updated_at FROM projects WHERE id = 'abc'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(before, after, "updated_at must not be bumped on rejected write");
+    }
+
+    #[test]
+    fn update_project_with_unknown_id_is_rejected() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 1);
+        let result = update_project(&mut conn, "bogus-id", Some("Ghost"), None, None);
+        assert!(result.is_err(), "a patch that matches no project must not report success");
+        assert_eq!(
+            get_project(&conn, "abc").unwrap().title,
+            "Grade 7 Science",
+            "the real project must be untouched"
+        );
+    }
+
+    #[test]
+    fn update_project_applies_a_multi_field_patch() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 1);
+        update_project(&mut conn, "abc", Some("New Title"), Some("am"), Some(1.25)).unwrap();
+        let detail = get_project(&conn, "abc").unwrap();
+        assert_eq!(detail.title, "New Title");
+        assert_eq!(detail.language, "am");
+        assert_eq!(detail.rate, 1.25);
+    }
+
+    #[test]
+    fn update_project_rolls_back_a_partial_patch() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 1);
+        // Make the third statement of the patch fail. A trigger is the only way
+        // to make a well-formed UPDATE abort here, and it is what lets this test
+        // observe the transaction rather than just assert it exists.
+        conn.execute_batch(
+            "CREATE TRIGGER reject_rate BEFORE UPDATE OF rate ON projects
+             BEGIN SELECT RAISE(ABORT, 'rate rejected'); END",
+        )
+        .unwrap();
+
+        let result = update_project(&mut conn, "abc", Some("New Title"), Some("am"), Some(1.25));
+        assert!(result.is_err(), "the failing statement must fail the whole patch");
+
+        let detail = get_project(&conn, "abc").unwrap();
+        assert_eq!(detail.title, "Grade 7 Science", "title must roll back");
+        assert_eq!(detail.language, "en", "language must roll back");
     }
 
     #[test]
