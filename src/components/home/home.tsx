@@ -255,6 +255,7 @@ export function Home() {
       </main>
 
       <ImportDialog
+        key={pending ?? "none"}
         srcPath={pending}
         onCancel={() => setPending(null)}
         onImported={() => {
