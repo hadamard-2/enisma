@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AudioLines,
   Check,
@@ -13,7 +13,9 @@ import {
   Upload,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { PROJECTS } from "@/lib/data";
+import { open } from "@tauri-apps/plugin-dialog";
+import { listProjects, type ProjectSummary } from "@/lib/api";
+import { relativeTime } from "@/lib/time";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,22 +37,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ProjectCard } from "./project-card";
+import { ImportDialog } from "./import-dialog";
 
 type Filter = "All" | "Recent" | "In progress" | "Completed";
-
-const RECENT_LABELS = new Set(["just now", "2 hours ago", "yesterday"]);
-
-const NAV_ITEMS: {
-  label: string;
-  key: Filter;
-  icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
-  count: number;
-}[] = [
-  { label: "All projects", key: "All", icon: Layers, count: PROJECTS.length },
-  { label: "Recent", key: "Recent", icon: Clock, count: 3 },
-  { label: "In progress", key: "In progress", icon: FileText, count: 3 },
-  { label: "Completed", key: "Completed", icon: Check, count: 2 },
-];
 
 export function Home() {
   const navigate = useNavigate();
@@ -60,11 +49,55 @@ export function Home() {
   const [showCompleted, setShowCompleted] = useState(true);
   const { theme, toggle } = useTheme();
 
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [pending, setPending] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    listProjects().then(setProjects).catch(console.error);
+  }, []);
+
+  useEffect(refresh, [refresh]);
+
+  async function pickFile() {
+    const chosen = await open({
+      multiple: false,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (typeof chosen === "string") setPending(chosen);
+  }
+
+  const navItems = useMemo(
+    () => [
+      { label: "All projects", key: "All" as const, icon: Layers, count: projects.length },
+      {
+        label: "Recent",
+        key: "Recent" as const,
+        icon: Clock,
+        count: projects.filter((p) => Date.now() - new Date(p.updatedAt).getTime() < 86_400_000)
+          .length,
+      },
+      {
+        label: "In progress",
+        key: "In progress" as const,
+        icon: FileText,
+        count: projects.filter((p) => p.status === "in-progress").length,
+      },
+      {
+        label: "Completed",
+        key: "Completed" as const,
+        icon: Check,
+        count: projects.filter((p) => p.status === "done").length,
+      },
+    ],
+    [projects],
+  );
+
   const filtered = useMemo(() => {
-    const list = PROJECTS.filter((p) => {
+    const list = projects.filter((p) => {
       if (filter === "Completed" && p.status !== "done") return false;
       if (filter === "In progress" && p.status !== "in-progress") return false;
-      if (filter === "Recent" && !RECENT_LABELS.has(p.lastEdited)) return false;
+      if (filter === "Recent" && Date.now() - new Date(p.updatedAt).getTime() >= 86_400_000)
+        return false;
       if (!showCompleted && p.status === "done") return false;
       if (query && !p.title.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
@@ -74,11 +107,11 @@ export function Home() {
     } else if (sortBy === "progress") {
       list.sort(
         (a, b) =>
-          b.pagesReviewed / b.pagesTotal - a.pagesReviewed / a.pagesTotal,
+          b.pagesReviewed / b.pageCount - a.pagesReviewed / a.pageCount,
       );
     }
     return list;
-  }, [filter, query, sortBy, showCompleted]);
+  }, [projects, filter, query, sortBy, showCompleted]);
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -93,7 +126,7 @@ export function Home() {
           </span>
         </div>
 
-        <Button size="lg" className="mb-4 w-full">
+        <Button size="lg" className="mb-4 w-full" onClick={pickFile}>
           <Plus />
           New project
         </Button>
@@ -102,7 +135,7 @@ export function Home() {
           Library
         </div>
 
-        {NAV_ITEMS.map((it) => {
+        {navItems.map((it) => {
           const active = filter === it.key;
           const IconCmp = it.icon;
           return (
@@ -141,8 +174,8 @@ export function Home() {
               Your audiobook projects
             </h1>
             <p className="mt-1.5 text-sm text-ink-3">
-              {filtered.length} {filtered.length === 1 ? "project" : "projects"} · last
-              activity 2 hours ago
+              {filtered.length} {filtered.length === 1 ? "project" : "projects"}
+              {projects[0] ? ` · last activity ${relativeTime(projects[0].updatedAt)}` : ""}
             </p>
           </div>
 
@@ -210,7 +243,7 @@ export function Home() {
         <div className="my-6 h-px bg-line" />
 
         <div className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-5">
-          <NewProjectTile />
+          <NewProjectTile onClick={pickFile} />
           {filtered.map((p) => (
             <ProjectCard
               key={p.id}
@@ -220,13 +253,25 @@ export function Home() {
           ))}
         </div>
       </main>
+
+      <ImportDialog
+        srcPath={pending}
+        onCancel={() => setPending(null)}
+        onImported={() => {
+          setPending(null);
+          refresh();
+        }}
+      />
     </div>
   );
 }
 
-function NewProjectTile() {
+function NewProjectTile({ onClick }: { onClick: () => void }) {
   return (
-    <button className="group flex min-h-[264px] cursor-pointer flex-col justify-between rounded-xl border-[1.5px] border-dashed border-line-2 bg-transparent p-4.5 text-left text-ink-2 transition-colors duration-150 hover:border-teal hover:bg-paper-2">
+    <button
+      onClick={onClick}
+      className="group flex min-h-[264px] cursor-pointer flex-col justify-between rounded-xl border-[1.5px] border-dashed border-line-2 bg-transparent p-4.5 text-left text-ink-2 transition-colors duration-150 hover:border-teal hover:bg-paper-2"
+    >
       <div className="grid size-9.5 place-items-center rounded-lg border border-line bg-paper-2 text-ink-2">
         <Upload size={18} />
       </div>
@@ -236,16 +281,6 @@ function NewProjectTile() {
         </div>
         <div className="text-[12.5px] leading-relaxed text-ink-3">
           Import a textbook from disk.
-        </div>
-        <div className="mt-3 flex gap-1.5">
-          {["PDF", "EPUB", "More"].map((t) => (
-            <span
-              key={t}
-              className="rounded border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[10.5px] text-ink-3"
-            >
-              {t}
-            </span>
-          ))}
         </div>
       </div>
     </button>

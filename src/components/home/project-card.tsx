@@ -1,5 +1,6 @@
 import { Clock, MoreHorizontal } from "lucide-react";
-import type { Project } from "@/lib/data";
+import type { ProjectSummary } from "@/lib/api";
+import { relativeTime } from "@/lib/time";
 import { Card } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -9,10 +10,10 @@ export function ProjectCard({
   project,
   onOpen,
 }: {
-  project: Project;
+  project: ProjectSummary;
   onOpen?: () => void;
 }) {
-  const pct = Math.round((project.pagesReviewed / project.pagesTotal) * 100);
+  const pct = Math.round((project.pagesReviewed / project.pageCount) * 100);
 
   return (
     <Card
@@ -39,18 +40,18 @@ export function ProjectCard({
           <div className="mb-3 flex items-center justify-between text-xs text-ink-2">
             <StatusPill status={project.status} size="sm" />
             <span className="font-mono text-ink-3">
-              {project.pagesReviewed}/{project.pagesTotal} pp
+              {project.pagesReviewed}/{project.pageCount} pp
             </span>
           </div>
           <ProgressBar
             value={project.pagesReviewed}
-            total={project.pagesTotal}
+            total={project.pageCount}
             barClassName={project.status === "done" ? "bg-teal" : "bg-amber"}
           />
           <div className="mt-2 flex justify-between text-[11.5px] text-ink-3">
             <span className="flex items-center gap-1">
               <Clock size={11} strokeWidth={1.8} />
-              {project.lastEdited}
+              {relativeTime(project.updatedAt)}
             </span>
             <span className="font-mono">{pct}%</span>
           </div>

@@ -1,4 +1,6 @@
-import type { CoverPalette, Project } from "@/lib/data";
+import type { CoverPalette } from "@/lib/data";
+import type { ProjectSummary } from "@/lib/api";
+import { coverForId } from "@/lib/cover";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -24,12 +26,12 @@ export function ProjectCover({
   project,
   size = "md",
 }: {
-  project: Project;
+  project: ProjectSummary;
   size?: "sm" | "md";
 }) {
   const { theme } = useTheme();
   const palettes = theme === "dark" ? DARK_PALETTES : LIGHT_PALETTES;
-  const p = palettes[project.cover] ?? palettes.warm;
+  const p = palettes[coverForId(project.id)] ?? palettes.warm;
   return (
     <div
       className={cn(
