@@ -10,7 +10,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { LANGUAGES, VOICES } from "@/lib/editor-data";
+import { LANGUAGES, type LanguageCode } from "@/lib/languages";
+import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
 
 export function SettingsPanel({
   language,
@@ -41,7 +42,7 @@ export function SettingsPanel({
   done: boolean;
   onToggleDone: () => void;
 }) {
-  const voices = VOICES[language] ?? [];
+  const voices = PLACEHOLDER_VOICES[language as LanguageCode] ?? [];
 
   useEffect(() => {
     if (!voices.includes(voice) && voices[0]) setVoice(voices[0]);
@@ -72,8 +73,8 @@ export function SettingsPanel({
             </SelectTrigger>
             <SelectContent>
               {LANGUAGES.map((l) => (
-                <SelectItem key={l} value={l}>
-                  {l}
+                <SelectItem key={l.code} value={l.code}>
+                  {l.label}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -1,19 +1,20 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { formatShortcut, MOD } from "@/lib/platform";
-import type { PageContent } from "@/lib/editor-data";
+import { PdfCanvas } from "./pdf-canvas";
 
 export type View = "pdf" | "split" | "edit";
 
 export function CenterPanel({
   page,
-  content,
+  pdfPath,
   text,
   setText,
   saved,
   view,
 }: {
   page: number;
-  content: PageContent;
+  pdfPath: string;
   text: string;
   setText: (t: string) => void;
   saved: boolean;
@@ -35,7 +36,7 @@ export function CenterPanel({
             <div className="mb-2 font-mono text-[10.5px] tracking-widest text-ink-3 uppercase">
               PDF preview · source page {page}
             </div>
-            <PdfPage page={page} content={content} />
+            <PdfCanvas url={convertFileSrc(pdfPath)} page={page} />
           </div>
         )}
 
@@ -52,7 +53,12 @@ export function CenterPanel({
                 {saved ? "saved" : "unsaved changes"}
               </span>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-line bg-surface px-5 py-4 shadow-paper-sm">
+            <div className="relative flex min-h-0 flex-1 flex-col rounded-xl border border-line bg-surface px-5 py-4 shadow-paper-sm">
+              {text === "" && (
+                <div className="pointer-events-none absolute px-1 font-serif text-base text-ink-3 italic">
+                  No extracted text yet — type here, or wait for extraction.
+                </div>
+              )}
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -73,58 +79,6 @@ export function CenterPanel({
         )}
       </div>
     </section>
-  );
-}
-
-function PdfPage({ page, content }: { page: number; content: PageContent }) {
-  const paragraphs = content.body.split("\n\n");
-  return (
-    <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-line bg-surface px-9 py-8 font-serif text-ink-2 shadow-paper-sm">
-      <div className="mb-4 flex justify-between border-b border-line pb-2 font-mono text-[10.5px] tracking-widest text-ink-4 uppercase">
-        <span>{content.chapter} · Plant Biology</span>
-        <span>{page}</span>
-      </div>
-
-      <div className="mb-4 text-[22px] font-medium tracking-tight text-ink">
-        {content.heading}
-      </div>
-
-      <div className="text-[15px] leading-relaxed">
-        {paragraphs.map((para, i) => {
-          const trimmed = para.trim();
-          const isEquation =
-            trimmed.startsWith("6 CO") || trimmed.startsWith("Glucose");
-          return (
-            <p
-              key={i}
-              className={cn(
-                "mb-3.5",
-                isEquation
-                  ? "rounded-md bg-paper-2 px-3.5 py-2.5 text-center font-mono text-[13px] text-ink"
-                  : "text-left text-ink-2",
-              )}
-            >
-              {para}
-            </p>
-          );
-        })}
-      </div>
-
-      {content.figure && (
-        <div className="mt-4 rounded-lg border border-dashed border-line-2 bg-paper-2 p-3.5">
-          <div
-            className="mb-2 grid h-[90px] place-items-center rounded font-mono text-[11px] tracking-wider text-ink-3"
-            style={{
-              backgroundImage:
-                "repeating-linear-gradient(135deg, var(--paper-3) 0 8px, var(--paper-2) 8px 16px)",
-            }}
-          >
-            [ figure illustration ]
-          </div>
-          <div className="text-[12px] text-ink-3 italic">{content.figure}</div>
-        </div>
-      )}
-    </div>
   );
 }
 

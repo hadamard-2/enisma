@@ -258,9 +258,10 @@ export function Home() {
         key={pending ?? "none"}
         srcPath={pending}
         onCancel={() => setPending(null)}
-        onImported={() => {
+        onImported={(id) => {
           setPending(null);
           refresh();
+          navigate(`/project/${id}`);
         }}
       />
     </div>

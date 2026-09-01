@@ -14,13 +14,16 @@ import {
   useDefaultLayout,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
-import { PROJECTS, type Project } from "@/lib/data";
 import {
-  buildInitialPages,
-  getPageContent,
-  VOICES,
+  getPage,
+  getProject,
+  savePageText,
+  setPageDone,
+  updateProject,
   type PageMeta,
-} from "@/lib/editor-data";
+  type ProjectDetail,
+} from "@/lib/api";
+import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
 import { cn } from "@/lib/utils";
 import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
 import { Button } from "@/components/ui/button";
@@ -38,9 +41,16 @@ const VIEW_ORDER: View[] = ["pdf", "split", "edit"];
 export function EditorRoute() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const project = PROJECTS.find((p) => p.id === id);
+  const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [missing, setMissing] = useState(false);
 
-  if (!project) return <Navigate to="/" replace />;
+  useEffect(() => {
+    if (!id) return;
+    getProject(id).then(setProject).catch(() => setMissing(true));
+  }, [id]);
+
+  if (missing) return <Navigate to="/" replace />;
+  if (!project) return <div className="flex-1 bg-paper" />;
 
   return <Editor project={project} onBack={() => navigate("/")} />;
 }
@@ -49,32 +59,52 @@ function Editor({
   project,
   onBack,
 }: {
-  project: Project;
+  project: ProjectDetail;
   onBack: () => void;
 }) {
-  const [pages, setPages] = useState<PageMeta[]>(() => buildInitialPages());
-  const [activePage, setActivePage] = useState(18);
-  const [language, setLanguage] = useState(project.language || "English");
-  const initialVoice = (VOICES[project.language] ?? VOICES.English ?? [])[0] ?? "";
+  const [pages, setPages] = useState<PageMeta[]>(project.pages);
+  const [activePage, setActivePage] = useState(
+    project.pages.find((p) => !p.done)?.pageNo ?? 1,
+  );
+  const [language, setLanguage] = useState<string>(project.language);
+  const initialVoice = (PLACEHOLDER_VOICES[project.language] ?? [])[0] ?? "";
   const [voice, setVoice] = useState(initialVoice);
   const [speed, setSpeed] = useState(1.0);
   const [pitch, setPitch] = useState(0.0);
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
+  const savedTextRef = useRef("");
   const [saved, setSaved] = useState(true);
   const [view, setView] = useState<View>("split");
 
-  const content = useMemo(() => getPageContent(activePage), [activePage]);
-
   useEffect(() => {
-    setText(content.body);
-    setSaved(true);
-  }, [content]);
+    getPage(project.id, activePage).then((p) => {
+      const value = p.editedText ?? p.sourceText ?? "";
+      savedTextRef.current = value;
+      setText(value);
+      setSaved(true);
+    });
+  }, [project.id, activePage]);
 
+  // Autosave on a short debounce; this is what finally makes the panel's
+  // "saved / unsaved changes" indicator tell the truth.
   useEffect(() => {
-    setSaved(text === content.body);
-  }, [text, content.body]);
+    if (text === savedTextRef.current) {
+      setSaved(true);
+      return;
+    }
+    setSaved(false);
+    const t = setTimeout(() => {
+      savePageText(project.id, activePage, text)
+        .then(() => {
+          savedTextRef.current = text;
+          setSaved(true);
+        })
+        .catch(console.error);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [text, project.id, activePage]);
 
   useEffect(() => {
     if (!playing) return;
@@ -97,15 +127,17 @@ function Editor({
   }, [pages, filter]);
 
   function toggleDone(n: number) {
-    setPages((ps) => ps.map((p) => (p.n === n ? { ...p, done: !p.done } : p)));
+    const next = !(pages.find((p) => p.pageNo === n)?.done ?? false);
+    setPages((ps) => ps.map((p) => (p.pageNo === n ? { ...p, done: next } : p)));
+    setPageDone(project.id, n, next).catch(console.error);
   }
 
   function gotoPage(delta: number) {
-    const idx = visiblePages.findIndex((p) => p.n === activePage);
+    const idx = visiblePages.findIndex((p) => p.pageNo === activePage);
     if (idx === -1) return;
     const nextIdx = Math.max(0, Math.min(visiblePages.length - 1, idx + delta));
     const next = visiblePages[nextIdx];
-    if (next) setActivePage(next.n);
+    if (next) setActivePage(next.pageNo);
   }
 
   function cycleView(delta: number) {
@@ -114,7 +146,7 @@ function Editor({
     setView(VIEW_ORDER[nextIdx]!);
   }
 
-  const activeDone = pages.find((p) => p.n === activePage)?.done ?? false;
+  const activeDone = pages.find((p) => p.pageNo === activePage)?.done ?? false;
 
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -204,6 +236,7 @@ function Editor({
 
         <input
           defaultValue={project.title}
+          onBlur={(e) => updateProject(project.id, { title: e.target.value }).catch(console.error)}
           className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-0.5 font-serif text-[15px] font-medium text-ink outline-none focus:border-line"
         />
 
@@ -268,7 +301,7 @@ function Editor({
           <ResizablePanel id="center" defaultSize="52%" minSize="35%">
             <CenterPanel
               page={activePage}
-              content={content}
+              pdfPath={project.pdfPath}
               text={text}
               setText={setText}
               saved={saved}
@@ -290,7 +323,10 @@ function Editor({
           >
             <SettingsPanel
               language={language}
-              setLanguage={setLanguage}
+              setLanguage={(l) => {
+                setLanguage(l);
+                updateProject(project.id, { language: l }).catch(console.error);
+              }}
               voice={voice}
               setVoice={setVoice}
               speed={speed}

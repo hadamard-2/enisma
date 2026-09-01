@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { ProgressBar } from "@/components/ui/progress-bar";
-import type { PageMeta } from "@/lib/editor-data";
+import type { PageMeta } from "@/lib/api";
 
 export type PageFilter = "all" | "done" | "not-done";
 
@@ -79,10 +79,10 @@ export function PagePanel({
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {visible.map((p) => (
           <PageRow
-            key={p.n}
+            key={p.pageNo}
             page={p}
-            active={p.n === active}
-            onClick={() => setActive(p.n)}
+            active={p.pageNo === active}
+            onClick={() => setActive(p.pageNo)}
           />
         ))}
       </div>
@@ -135,7 +135,7 @@ function PageRow({
           page.done ? "text-teal-ink" : "text-amber-ink",
         )}
       >
-        p. {page.n}
+        p. {page.pageNo}
       </span>
     </button>
   );

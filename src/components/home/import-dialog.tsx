@@ -25,7 +25,7 @@ export function ImportDialog({
 }: {
   srcPath: string | null;
   onCancel: () => void;
-  onImported: () => void;
+  onImported: (id: string) => void;
 }) {
   const stem = srcPath?.split(/[/\\]/).pop()?.replace(/\.pdf$/i, "") ?? "";
   const [title, setTitle] = useState(stem);
@@ -38,8 +38,7 @@ export function ImportDialog({
     setBusy(true);
     setError(null);
     try {
-      await importProject(title.trim(), language, srcPath);
-      onImported();
+      onImported(await importProject(title.trim(), language, srcPath));
     } catch (e) {
       setError(String(e));
     } finally {
