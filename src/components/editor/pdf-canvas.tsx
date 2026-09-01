@@ -8,6 +8,26 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
+/**
+ * Runtime asset directories pdf.js fetches from, copied into our own bundle by
+ * the `pdfjs-assets` plugin in `vite.config.ts`. Resolved against the document
+ * so the same code works behind Vite's dev server and behind `tauri://` in a
+ * packaged build. Each needs a trailing slash — pdf.js concatenates a filename
+ * onto it and rejects a base without one.
+ *
+ * `wasmUrl` is the one that matters for this product's input: pdf.js decodes
+ * JBIG2, CCITTFax and JPX images through WebAssembly, and a missing base URL
+ * makes those decoders fail. Because `getDocument` defaults `stopAtErrors` to
+ * false, such a failure is logged as a warning and the image is dropped, so an
+ * undecodable scan renders as a blank page rather than an error.
+ */
+const asset = (dir: string) => new URL(`pdfjs/${dir}/`, document.baseURI).href;
+const PDFJS_ASSET_URLS = {
+  wasmUrl: asset("wasm"),
+  cMapUrl: asset("cmaps"),
+  standardFontDataUrl: asset("standard_fonts"),
+};
+
 export function PdfCanvas({ url, page }: { url: string; page: number }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -15,12 +35,14 @@ export function PdfCanvas({ url, page }: { url: string; page: number }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Load the document once per URL. Range requests are on by default, so a
-  // large scan is fetched in chunks rather than all at once.
+  // Load the document once per URL. The whole file is delivered in one
+  // response: pdf.js only negotiates range requests over http(s), and the
+  // asset protocol this URL uses is neither. That sets a memory ceiling — the
+  // PDF is buffered whole on the way through — which is a known limit here.
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    const loading = pdfjs.getDocument({ url });
+    const loading = pdfjs.getDocument({ url, ...PDFJS_ASSET_URLS });
     loading.promise.then(
       (d) => {
         // PDFDocumentProxy has no destroy() of its own in v6; loading.destroy()
