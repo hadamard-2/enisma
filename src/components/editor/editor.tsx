@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen,
@@ -38,6 +38,21 @@ import { SettingsPanel } from "./settings-panel";
 
 const VIEW_ORDER: View[] = ["pdf", "split", "edit"];
 
+const SAVE_DEBOUNCE_MS = 500;
+
+/**
+ * One queued page-text write. The project and page travel WITH the text, so a
+ * write dispatched later — after the user has already paged away — still lands
+ * on the row the text was actually typed into.
+ */
+type PendingWrite = {
+  projectId: string;
+  page: number;
+  text: string;
+  /** Already handed to the write chain; kept so an identical re-queue is a no-op. */
+  sent: boolean;
+};
+
 export function EditorRoute() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -75,13 +90,82 @@ function Editor({
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
   const savedTextRef = useRef("");
-  // Which page `text`/`savedTextRef` truthfully represent right now. Only
-  // the loader's `.then()` below may advance this ref — that is the one
-  // event that actually establishes "the text in state came from page N".
-  // The autosave effect only ever reads it.
-  const textPageRef = useRef(activePage);
+  // Which page `text`/`savedTextRef` truthfully represent right now, or null
+  // while no load has resolved yet. Only the loader's `.then()` below may
+  // advance this ref — a fetch landing is the one event that actually
+  // establishes "the text in state came from page N". Everything else reads it.
+  const textPageRef = useRef<number | null>(null);
   const [saved, setSaved] = useState(true);
   const [view, setView] = useState<View>("split");
+
+  // ---- Autosave machinery -------------------------------------------------
+  // The debounce deliberately does NOT live inside an effect. An effect's
+  // cleanup runs on every `text`/`activePage` change, so a timer owned by one
+  // is torn down by the very page switch it has to survive — which is what
+  // forced earlier versions of this code to choose between cancelling a real
+  // pending write and firing an un-debounced one. These refs outlive every
+  // dependency change: a pending write is cancelled only by being superseded,
+  // and is flushed explicitly when we leave the page.
+  const pendingRef = useRef<PendingWrite | null>(null);
+  const debounceRef = useRef<number | null>(null);
+  // Every write is appended to this one chain, so `savePageText` calls are
+  // invoked strictly in dispatch order and a slower earlier write can never
+  // land on top of a newer one.
+  const writeChainRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const sendPending = useCallback(() => {
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    const p = pendingRef.current;
+    if (!p || p.sent) return;
+    p.sent = true;
+    writeChainRef.current = writeChainRef.current
+      .catch(() => {})
+      .then(() => savePageText(p.projectId, p.page, p.text))
+      .then(
+        () => {
+          if (pendingRef.current === p) pendingRef.current = null;
+          // Only adopt this as the saved baseline if `text` still belongs to
+          // the page we just wrote; otherwise we would be comparing the page
+          // now on screen against some other page's content.
+          if (textPageRef.current !== p.page) return;
+          savedTextRef.current = p.text;
+          setSaved(pendingRef.current === null);
+        },
+        (e: unknown) => {
+          console.error(e);
+          // Release the slot so a later effect run can queue the same text
+          // again; the indicator stays on "unsaved changes" until one lands.
+          if (pendingRef.current === p) pendingRef.current = null;
+        },
+      );
+  }, []);
+
+  const queueEdit = useCallback(
+    (projectId: string, page: number, value: string) => {
+      const p = pendingRef.current;
+      if (p && p.projectId === projectId && p.page === page && p.text === value) {
+        // Already queued, or already in flight. An effect re-run for an
+        // unrelated reason must not restart the debounce or double-write.
+        return;
+      }
+      // Defensive: never let a still-unsent edit for another page be silently
+      // overwritten in the single pending slot. (The page-change flush below
+      // should already have sent it.)
+      if (p && !p.sent && (p.page !== page || p.projectId !== projectId)) {
+        sendPending();
+      }
+      pendingRef.current = { projectId, page, text: value, sent: false };
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null;
+        sendPending();
+      }, SAVE_DEBOUNCE_MS);
+    },
+    [sendPending],
+  );
 
   // Load the active page's text. Guards against out-of-order responses: if
   // the page changes again before this fetch resolves, `cancelled` (captured
@@ -103,48 +187,35 @@ function Editor({
     };
   }, [project.id, activePage]);
 
+  // Leaving a page (or the editor) sends whatever is still queued, addressed
+  // to the page it was typed on. This is what stops the single pending slot
+  // from ever being reused for a different page while an edit is still waiting
+  // out its debounce — and it is the only place a page change touches the
+  // pending write, which is why the timer no longer has to die with the effect.
+  useEffect(() => () => sendPending(), [project.id, activePage, sendPending]);
+
   // Autosave on a short debounce; this is what finally makes the panel's
   // "saved / unsaved changes" indicator tell the truth.
   //
-  // This effect also re-runs the instant `activePage` changes — before the
-  // loader effect above has fetched the new page's text. At that moment
-  // `text` still holds the OUTGOING page's content while `activePage`
-  // already points at the new one; scheduling
-  // `savePageText(project.id, activePage, text)` in that state would write
-  // the old page's edit into the new page's row. `textPageRef` (advanced
-  // only by the loader, once its fetch has actually landed) is what `text`
-  // truthfully belongs to — and it can lag behind `activePage` across more
-  // than one keystroke if the user types again before that load resolves.
-  // For as long as that gap is open, every run is treated as "still on the
-  // outgoing page": flush any unsaved edit there, under the page it
-  // actually belongs to (`pageForThisText`), and never schedule anything
-  // under `activePage` until the loader itself has proven `text` belongs to
-  // it.
+  // This effect only decides WHAT to queue — never when the write goes out. It
+  // attributes `text` to `textPageRef`, the page a load actually delivered it
+  // for, and never to `activePage`, which runs ahead of the text during the gap
+  // between a page switch and that page's fetch resolving.
   useEffect(() => {
-    const pageForThisText = textPageRef.current;
-
-    if (pageForThisText !== activePage) {
-      if (text !== savedTextRef.current) {
-        savePageText(project.id, pageForThisText, text).catch(console.error);
-      }
-      return;
-    }
+    const page = textPageRef.current;
 
     if (text === savedTextRef.current) {
       setSaved(true);
       return;
     }
     setSaved(false);
-    const t = setTimeout(() => {
-      savePageText(project.id, activePage, text)
-        .then(() => {
-          savedTextRef.current = text;
-          setSaved(true);
-        })
-        .catch(console.error);
-    }, 500);
-    return () => clearTimeout(t);
-  }, [text, project.id, activePage]);
+
+    // No load has resolved yet, so nothing has established which page this
+    // text belongs to. Don't invent an owner for it.
+    if (page === null) return;
+
+    queueEdit(project.id, page, text);
+  }, [text, project.id, activePage, queueEdit]);
 
   useEffect(() => {
     if (!playing) return;
