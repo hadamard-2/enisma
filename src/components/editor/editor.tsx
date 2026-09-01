@@ -75,11 +75,11 @@ function Editor({
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
   const savedTextRef = useRef("");
-  // Which page `text`/`savedTextRef` currently represent. Updated by the
-  // autosave effect below the moment it has actually processed a given
-  // `activePage`, which is what lets it tell "the user typed" apart from
-  // "the page changed" on the very next render (see that effect's comment).
-  const lastPageRef = useRef(activePage);
+  // Which page `text`/`savedTextRef` truthfully represent right now. Only
+  // the loader's `.then()` below may advance this ref — that is the one
+  // event that actually establishes "the text in state came from page N".
+  // The autosave effect only ever reads it.
+  const textPageRef = useRef(activePage);
   const [saved, setSaved] = useState(true);
   const [view, setView] = useState<View>("split");
 
@@ -94,6 +94,7 @@ function Editor({
       if (cancelled) return;
       const value = p.editedText ?? p.sourceText ?? "";
       savedTextRef.current = value;
+      textPageRef.current = activePage;
       setText(value);
       setSaved(true);
     });
@@ -110,16 +111,17 @@ function Editor({
   // `text` still holds the OUTGOING page's content while `activePage`
   // already points at the new one; scheduling
   // `savePageText(project.id, activePage, text)` in that state would write
-  // the old page's edit into the new page's row (or, if the load wins the
-  // race and text/savedTextRef sync up first, cancel the pending timer and
-  // discard the edit with nothing ever written). `lastPageRef` records which
-  // page this effect last actually processed, so a mismatch against
-  // `activePage` means "the page changed, not the text" — in which case we
-  // flush the edit immediately under the page it actually belongs to
-  // (`pageForThisText`) instead of scheduling anything under the new page.
+  // the old page's edit into the new page's row. `textPageRef` (advanced
+  // only by the loader, once its fetch has actually landed) is what `text`
+  // truthfully belongs to — and it can lag behind `activePage` across more
+  // than one keystroke if the user types again before that load resolves.
+  // For as long as that gap is open, every run is treated as "still on the
+  // outgoing page": flush any unsaved edit there, under the page it
+  // actually belongs to (`pageForThisText`), and never schedule anything
+  // under `activePage` until the loader itself has proven `text` belongs to
+  // it.
   useEffect(() => {
-    const pageForThisText = lastPageRef.current;
-    lastPageRef.current = activePage;
+    const pageForThisText = textPageRef.current;
 
     if (pageForThisText !== activePage) {
       if (text !== savedTextRef.current) {
