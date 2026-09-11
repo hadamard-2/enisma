@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, FastForward, Pause, Play, Rewind } from "lucide-react";
+import { FastForward, Pause, Play, Rewind } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,8 +25,6 @@ export function SettingsPanel({
   playing,
   setPlaying,
   page,
-  done,
-  onToggleDone,
 }: {
   language: string;
   setLanguage: (l: string) => void;
@@ -39,8 +37,6 @@ export function SettingsPanel({
   playing: boolean;
   setPlaying: (p: boolean) => void;
   page: number;
-  done: boolean;
-  onToggleDone: () => void;
 }) {
   const voices = PLACEHOLDER_VOICES[language as LanguageCode] ?? [];
 
@@ -163,23 +159,6 @@ export function SettingsPanel({
       </div>
       </div>
 
-      <div className="shrink-0 border-t border-line bg-paper-2 px-4.5 py-3">
-        <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-ink-3">
-          Page {page}
-        </div>
-        <button
-          onClick={onToggleDone}
-          className={cn(
-            "flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
-            done
-              ? "border-teal bg-teal text-surface hover:bg-teal/90"
-              : "border-line bg-surface text-ink hover:bg-paper-3",
-          )}
-        >
-          <Check size={15} strokeWidth={2} />
-          {done ? "Marked as done" : "Mark as done"}
-        </button>
-      </div>
     </aside>
   );
 }

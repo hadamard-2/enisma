@@ -1,7 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatShortcut, MOD } from "@/lib/platform";
-import { PdfCanvas } from "./pdf-canvas";
+import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
+import { PdfViewer } from "./pdf-viewer";
 
 export type View = "pdf" | "split" | "edit";
 
@@ -13,6 +14,8 @@ export function CenterPanel({
   saved,
   loadError,
   view,
+  done,
+  onToggleDone,
 }: {
   page: number;
   pdfPath: string;
@@ -22,6 +25,9 @@ export function CenterPanel({
   /** Non-null when this page's text could not be read; editing is blocked. */
   loadError: string | null;
   view: View;
+  /** Whether the active page is marked done. */
+  done: boolean;
+  onToggleDone: () => void;
 }) {
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   const seconds = Math.round(text.length / 14);
@@ -39,7 +45,7 @@ export function CenterPanel({
             <div className="mb-2 font-mono text-[10.5px] tracking-widest text-ink-3 uppercase">
               PDF preview · source page {page}
             </div>
-            <PdfCanvas url={convertFileSrc(pdfPath)} page={page} />
+            <PdfViewer url={convertFileSrc(pdfPath)} page={page} />
           </div>
         )}
 
@@ -76,7 +82,7 @@ export function CenterPanel({
                   <textarea
                     value={text}
                     onChange={(e) => setText(e.target.value)}
-                    className="min-h-0 flex-1 resize-none border-0 bg-transparent font-serif text-base leading-relaxed text-ink outline-none"
+                    className="min-h-0 flex-1 resize-none border-0 bg-transparent font-serif text-base leading-relaxed text-ink outline-none! scroll-inset"
                     style={{ letterSpacing: "0.005em" }}
                   />
                 </>
@@ -86,8 +92,23 @@ export function CenterPanel({
                   {wordCount} words · ~{seconds}s spoken
                 </span>
                 <span className="inline-flex items-center gap-2.5">
-                  <Kbd>{formatShortcut(MOD, "Z")}</Kbd> undo
-                  <Kbd>{formatShortcut(MOD, "S")}</Kbd> save
+                  <Kbd>{formatShortcut(MOD, "Z")}</Kbd> Undo
+                  <Kbd>{formatShortcut(MOD, SHIFT_KEY, "Z")}</Kbd> Redo
+                  <Kbd>{formatShortcut(MOD, "S")}</Kbd> Save
+                  <button
+                    onClick={onToggleDone}
+                    aria-pressed={done}
+                    title={done ? "Page is done — click to reopen" : "Mark this page done"}
+                    className={cn(
+                      "ml-1 inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 font-medium transition-colors",
+                      done
+                        ? "border-teal bg-teal text-surface hover:bg-teal/90"
+                        : "border-line bg-surface text-ink-2 hover:bg-paper-3 hover:text-ink",
+                    )}
+                  >
+                    <Check size={12} strokeWidth={2.2} />
+                    Page done
+                  </button>
                 </span>
               </div>
             </div>

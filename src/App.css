@@ -176,6 +176,7 @@ body {
   background: var(--paper);
 }
 
+/* Width is mirrored as SCROLLBAR in components/editor/pdf-viewer.tsx. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -183,10 +184,68 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+/* Transparent border + padding-box clip: the thumb floats over whatever
+   surface it scrolls instead of sitting on a paper-coloured band. */
 ::-webkit-scrollbar-thumb {
   background: var(--line);
+  background-clip: padding-box;
   border-radius: 10px;
-  border: 2px solid var(--paper);
+  border: 2px solid transparent;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* For scrollers inside rounded containers: keep the thumb clear of the
+   corners' curve. */
+.scroll-inset::-webkit-scrollbar-track {
+  margin-block: 10px;
+}
+
+/* pdf.js text layer: transparent, selectable text runs laid over the page
+   canvas. Minimal port of the `.textLayer` rules in
+   pdfjs-dist/web/pdf_viewer.css; pdf.js sets the per-run custom properties. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer ::selection {
+  background: color-mix(in srgb, var(--teal), transparent 70%);
+  color: transparent;
+}
+.textLayer br::selection {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--line-2);

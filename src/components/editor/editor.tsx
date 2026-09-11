@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen,
+  ChevronDown,
   ChevronLeft,
-  ChevronRight,
+  ChevronUp,
   Download,
   FileText,
   PanelLeft,
@@ -542,6 +543,8 @@ function Editor({
               saved={saved}
               loadError={loadError}
               view={view}
+              done={activeDone}
+              onToggleDone={() => toggleDone(activePage)}
             />
           </ResizablePanel>
 
@@ -572,8 +575,6 @@ function Editor({
               playing={playing}
               setPlaying={setPlaying}
               page={activePage}
-              done={activeDone}
-              onToggleDone={() => toggleDone(activePage)}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -679,7 +680,7 @@ function FloatingPagePill({
         title="Previous page (↑)"
         className="grid size-8 cursor-pointer place-items-center rounded-md text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
       >
-        <ChevronLeft size={16} strokeWidth={1.8} />
+        <ChevronUp size={16} strokeWidth={1.8} />
       </button>
 
       <span className="px-2 font-mono text-[12.5px] text-ink-2">
@@ -693,7 +694,7 @@ function FloatingPagePill({
         title="Next page (↓)"
         className="grid size-8 cursor-pointer place-items-center rounded-md text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
       >
-        <ChevronRight size={16} strokeWidth={1.8} />
+        <ChevronDown size={16} strokeWidth={1.8} />
       </button>
     </div>
   );
