@@ -8,16 +8,16 @@ Enisma is aimed at making educational material more accessible — its sample co
 
 Enisma is designed to run **fully offline**. Apart from a one-time model download on first launch, the entire pipeline — OCR, text-to-speech, and export — runs on-device with no network connection required, and your textbooks never leave your machine.
 
-> **Status:** early development. The full front-end is built and working against mock data; the backend (PDF import, OCR, TTS, export, persistence) is not yet implemented. See [Roadmap](#roadmap).
+> **Status:** early development. Projects are stored locally, and PDF import, page rendering, and text editing work end to end. OCR, text-to-speech, and export are not implemented yet: pages start with no extracted text, and the voice list and audio preview are placeholders. See [Roadmap](#roadmap).
 
 ## Features
 
-- **Project library** — a home screen listing your textbooks, each with its language, review status, and page-by-page progress.
+- **Project library** — import a PDF textbook and see every project with its language, review status, and page-by-page progress. Projects are saved on your machine.
 - **Three-panel editor:**
   - **Pages** — navigate every page in the book, filter by done/remaining, and mark pages as reviewed.
-  - **Document** — switch between PDF preview, side-by-side, and extracted-text-only views, and correct the OCR text inline with a live word count and estimated spoken duration.
-  - **Audio settings** — choose language, voice, speaking rate, and pitch, and preview the result.
-- **Keyboard-driven** — arrow keys to move between pages, `Cmd/Ctrl + \` to toggle the side panels, and `Cmd/Ctrl + ←/→` to cycle document views.
+  - **Document** — switch between PDF preview, side-by-side, and extracted-text-only views. The preview is zoomable and its text selectable; the text is edited inline with a live word count and estimated spoken duration, and saved automatically.
+  - **Audio settings** — choose language, voice, speaking rate, and pitch, and preview the result (placeholder until TTS lands).
+- **Keyboard-driven** — arrow keys to move between pages, `Cmd/Ctrl + \` to toggle the side panels, `Cmd/Ctrl + ←/→` to cycle document views, `Cmd/Ctrl + S` to save, and `Cmd/Ctrl + =/-/0` (or `Cmd/Ctrl` + scroll) to zoom the PDF preview.
 - Resizable, collapsible panels with layout that persists between sessions, and light/dark themes.
 
 ## Tech stack
@@ -34,6 +34,7 @@ Enisma is designed to run **fully offline**. Apart from a one-time model downloa
 
 - [Node.js](https://nodejs.org/) and [Bun](https://bun.sh/)
 - The [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform (Rust toolchain and system webview dependencies)
+- [uv](https://docs.astral.sh/uv/), which `tauri dev` uses to run the Python sidecar (see [sidecar/README.md](sidecar/README.md))
 
 ### Install
 
@@ -55,6 +56,8 @@ To work on just the web front-end in a browser:
 bun run dev
 ```
 
+Project data comes from the Rust backend, so in a plain browser the library and editor cannot load projects; use this for layout and styling work.
+
 ### Build
 
 Produce a production desktop binary:
@@ -71,17 +74,18 @@ src/                      React front-end
     home/                 Project library screen
     editor/               Three-panel page editor
     ui/                   shadcn/ui primitives
-  lib/                    Mock data, theme, and helpers
-src-tauri/                Tauri (Rust) backend
+  lib/                    Backend API wrappers, types, and helpers
+src-tauri/                Tauri (Rust) backend: SQLite storage, PDF import
+sidecar/                  Python sidecar for on-device OCR/TTS (health check only so far)
 ```
 
 ## Roadmap
 
-The interface is in place; the engine behind it is not. Every item below is built to run on-device, in keeping with the fully-offline goal above — OCR and TTS use local models, not cloud services:
+Every item below is built to run on-device, in keeping with the fully-offline goal above — OCR and TTS use local models, not cloud services:
 
-- [ ] PDF import and rendering
+- [x] PDF import and rendering
 - [ ] OCR / text extraction (on-device)
 - [ ] Text-to-speech integration (on-device)
 - [ ] First-run model download and management
 - [ ] Audiobook export
-- [ ] Persistent project storage (currently all state is in-memory)
+- [x] Persistent project storage

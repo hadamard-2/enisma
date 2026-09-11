@@ -21,7 +21,12 @@ Enisma is designed to run **fully offline**. Apart from a one-time model downloa
 
 ## Current state
 
-The front-end is fully built and working **against mock data** (`src/lib/data.ts`, `src/lib/editor-data.ts`). The Rust/Tauri backend is essentially a stub (`src-tauri/src/lib.rs` has only the default `greet` command). Not yet implemented: PDF import/render, OCR, TTS, export, and any persistence (all state is in-memory React). See the README roadmap.
+Persistence, PDF import, and PDF rendering are real; OCR, TTS, and export are not. See the README roadmap.
+
+- **Persistence:** SQLite via `rusqlite` (`src-tauri/src/db.rs`), in the app data directory as `enisma.db`, with schema migrations keyed on `PRAGMA user_version`. Projects and pages are stored; a project's status is derived from its pages, never stored. The front-end reaches it only through the Tauri commands in `src-tauri/src/project.rs`, wrapped in `src/lib/api.ts`.
+- **Import:** a picked PDF is page-counted with `lopdf` (`src-tauri/src/pdf.rs`) and copied to `projects/<uuid>/source.pdf` under the app data directory, and its project and page rows are created in one transaction (`src-tauri/src/import.rs`). Re-importing the same file creates an independent project.
+- **Editor:** renders the stored PDF with pdf.js through Tauri's asset protocol (`src/components/editor/pdf-viewer.tsx`: one page at a time, zoom, selectable text layer), autosaves each page's edited text, and persists the page-done flag, project title, and language.
+- **Not implemented yet:** OCR (pages start with no extracted text), TTS (voice list is a placeholder in `src/lib/placeholder-voices.ts`; voice, rate, and pitch are not saved; the audio preview is a mock), and export (the Export button is a stub). The Python sidecar (`sidecar/`) is supervised by the Rust core but only serves `/health`; it is where the on-device OCR and TTS engines will run.
 
 ## Tech stack & conventions
 
