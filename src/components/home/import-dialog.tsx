@@ -48,7 +48,7 @@ export function ImportDialog({
 
   return (
     <Dialog open={srcPath !== null} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="sm:max-w-105">
+      <DialogContent className="grid-cols-1 sm:max-w-120">
         <DialogHeader>
           <DialogTitle className="font-serif">Import a textbook</DialogTitle>
         </DialogHeader>
@@ -79,7 +79,9 @@ export function ImportDialog({
             </Select>
           </div>
 
-          <div className="truncate font-mono text-[11px] text-ink-3">{srcPath}</div>
+          <div className="truncate font-mono text-[11px] text-ink-3" title={srcPath ?? undefined}>
+            {srcPath}
+          </div>
 
           {error && (
             <div className="rounded-md border border-line bg-paper-2 px-3 py-2 text-[12.5px] text-amber-ink">
@@ -88,7 +90,7 @@ export function ImportDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="border-t-0">
           <Button variant="outline" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
