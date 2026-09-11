@@ -386,19 +386,6 @@ function Editor({
     storage: typeof window !== "undefined" ? window.localStorage : undefined,
   });
 
-  const [pillVisible, setPillVisible] = useState(false);
-  const hideTimerRef = useRef<number | null>(null);
-  const showPill = () => {
-    setPillVisible(true);
-    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = window.setTimeout(() => setPillVisible(false), 1800);
-  };
-  useEffect(
-    () => () => {
-      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
-    },
-    [],
-  );
 
   const toggleLeft = () => {
     const p = leftPanelRef.current;
@@ -482,10 +469,7 @@ function Editor({
         </Button>
       </header>
 
-      <div
-        className="relative flex min-h-0 flex-1"
-        onMouseMove={showPill}
-      >
+      <div className="relative flex min-h-0 flex-1">
         <FloatingPanelToggle
           side="left"
           collapsed={leftCollapsed}
@@ -496,14 +480,6 @@ function Editor({
           side="right"
           collapsed={rightCollapsed}
           onClick={toggleRight}
-        />
-
-        <FloatingPagePill
-          page={activePage}
-          totalPages={pages.length}
-          visible={pillVisible}
-          onPrev={() => gotoPage(-1)}
-          onNext={() => gotoPage(1)}
         />
 
         <ResizablePanelGroup
@@ -535,17 +511,25 @@ function Editor({
           <ResizableHandle />
 
           <ResizablePanel id="center" defaultSize="52%" minSize="35%">
-            <CenterPanel
-              page={activePage}
-              pdfPath={project.pdfPath}
-              text={text}
-              setText={setText}
-              saved={saved}
-              loadError={loadError}
-              view={view}
-              done={activeDone}
-              onToggleDone={() => toggleDone(activePage)}
-            />
+            <div className="relative h-full">
+              <FloatingPagePill
+                page={activePage}
+                totalPages={pages.length}
+                onPrev={() => gotoPage(-1)}
+                onNext={() => gotoPage(1)}
+              />
+              <CenterPanel
+                page={activePage}
+                pdfPath={project.pdfPath}
+                text={text}
+                setText={setText}
+                saved={saved}
+                loadError={loadError}
+                view={view}
+                done={activeDone}
+                onToggleDone={() => toggleDone(activePage)}
+              />
+            </div>
           </ResizablePanel>
 
           <ResizableHandle />
@@ -657,33 +641,27 @@ function FloatingViewToggle({
 function FloatingPagePill({
   page,
   totalPages,
-  visible,
   onPrev,
   onNext,
 }: {
   page: number;
   totalPages: number;
-  visible: boolean;
   onPrev: () => void;
   onNext: () => void;
 }) {
   return (
-    <div
-      className={cn(
-        "absolute bottom-8 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-line bg-surface p-0.5 shadow-paper-md transition-opacity duration-200",
-        visible ? "opacity-100" : "pointer-events-none opacity-0",
-      )}
-    >
+    // Same chrome as the view toggle in this row.
+    <div className="absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-line bg-surface p-0.5 shadow-paper-sm">
       <button
         onClick={onPrev}
         aria-label="Previous page (↑)"
         title="Previous page (↑)"
-        className="grid size-8 cursor-pointer place-items-center rounded-md text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
+        className="grid size-7 cursor-pointer place-items-center rounded-sm text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
       >
-        <ChevronUp size={16} strokeWidth={1.8} />
+        <ChevronUp size={15} strokeWidth={1.7} />
       </button>
 
-      <span className="px-2 font-mono text-[12.5px] text-ink-2">
+      <span className="px-1.5 font-mono text-[12px]">
         <span className="font-medium text-ink">{page}</span>
         <span className="text-ink-3"> / {totalPages}</span>
       </span>
@@ -692,9 +670,9 @@ function FloatingPagePill({
         onClick={onNext}
         aria-label="Next page (↓)"
         title="Next page (↓)"
-        className="grid size-8 cursor-pointer place-items-center rounded-md text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
+        className="grid size-7 cursor-pointer place-items-center rounded-sm text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
       >
-        <ChevronDown size={16} strokeWidth={1.8} />
+        <ChevronDown size={15} strokeWidth={1.7} />
       </button>
     </div>
   );
