@@ -150,12 +150,17 @@ function endsSentence(text: string): boolean {
 /**
  * Join hard-wrapped lines back into paragraphs.
  *
- * A line continues the previous one unless the previous ended a sentence, the
- * current opens a list item, or the previous was short enough to have ended
- * deliberately — a heading, say. That last test is measured against the
- * block's own median line width, not a fixed character count: an absolute
- * threshold reflowed the sample textbook's main column correctly while leaving
- * its narrow sidebar untouched.
+ * A line continues the paragraph being accumulated unless that paragraph ends
+ * a sentence, the current line opens a list item, or the paragraph is still
+ * short enough to have ended deliberately — a heading, say. The length test
+ * looks at the accumulated paragraph rather than only the line before it,
+ * which comes to the same thing for the case it exists to catch: a heading is
+ * only ever the first line of its paragraph, so nothing has been joined onto
+ * it yet and its length is its own. Once a paragraph has absorbed a second
+ * line it is comfortably over the threshold and the test stops mattering.
+ * The threshold is the block's own median line width, not a fixed character
+ * count: an absolute threshold reflowed the sample textbook's main column
+ * correctly while leaving its narrow sidebar untouched.
  */
 export function reflowLines(lines: Line[]): string[] {
   if (lines.length === 0) return [];

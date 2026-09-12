@@ -33,7 +33,13 @@ export function ImportDialog({
   const stem = srcPath?.split(/[/\\]/).pop()?.replace(/\.pdf$/i, "") ?? "";
   const [title, setTitle] = useState(stem);
   const [language, setLanguage] = useState<string>("en");
-  const [busy, setBusy] = useState(false);
+  /**
+   * Which step is running, so the button can name it. Extraction and the
+   * import itself both happen on either path — the scanned warning only
+   * changes where the pause is — so the label tracks the phase, not the path.
+   */
+  const [phase, setPhase] = useState<"extracting" | "importing" | null>(null);
+  const busy = phase !== null;
   const [error, setError] = useState<string | null>(null);
   /**
    * Text already extracted from the picked PDF, held back because the book
@@ -60,11 +66,11 @@ export function ImportDialog({
    */
   async function confirm(force = false) {
     if (!srcPath || !title.trim()) return;
-    setBusy(true);
     setError(null);
     try {
       let pageTexts = scanned?.pageTexts;
       if (!pageTexts) {
+        setPhase("extracting");
         const result = await extractFromBytes(await readPdfBytes(srcPath));
         pageTexts = result.pageTexts;
         if (result.looksScanned && !force) {
@@ -72,11 +78,12 @@ export function ImportDialog({
           return;
         }
       }
+      setPhase("importing");
       onImported(await importProject(title.trim(), language, srcPath, pageTexts));
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      setPhase(null);
     }
   }
 
@@ -122,7 +129,7 @@ export function ImportDialog({
               {error}
             </div>
           )}
-          {scanned && !error && (
+          {scanned && (
             <div className="rounded-md border border-line bg-paper-2 px-3 py-2 text-[12.5px] text-amber-ink">
               {t("import.scannedWarning", {
                 empty: scanned.emptyPages,
@@ -138,10 +145,8 @@ export function ImportDialog({
           </Button>
           <Button onClick={() => confirm(scanned !== null)} disabled={busy || !title.trim()}>
             {t(
-              busy
-                ? scanned
-                  ? "import.importing"
-                  : "import.extracting"
+              phase
+                ? `import.${phase}`
                 : scanned
                   ? "import.importAnyway"
                   : "import.confirm",

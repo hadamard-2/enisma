@@ -70,5 +70,5 @@ export const savePageSourceText = (projectId: string, pageTexts: string[]) =>
  */
 export const readPdfBytes = async (path: string): Promise<Uint8Array> => {
   const bytes = await invoke<ArrayBuffer | number[]>("read_pdf_bytes_cmd", { path });
-  return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes);
+  return new Uint8Array(bytes);
 };
