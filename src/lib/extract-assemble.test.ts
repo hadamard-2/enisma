@@ -125,3 +125,71 @@ describe("sortBlockLines", () => {
     expect(block.lines.map((l) => l.text)).toEqual(["a", "b"]);
   });
 });
+
+import { reflowLines } from "./extract-assemble";
+
+describe("reflowLines", () => {
+  it("joins hard-wrapped lines into one paragraph", () => {
+    const paragraphs = reflowLines([
+      line("Their bodies consist of long, slender thread-like structures called", 57, 557),
+      line("hyphae. Hyphae play an important role in how they obtain food.", 57, 541),
+    ]);
+    expect(paragraphs).toEqual([
+      "Their bodies consist of long, slender thread-like structures called hyphae. Hyphae play an important role in how they obtain food.",
+    ]);
+  });
+
+  it("starts a new paragraph after a line that ends a sentence", () => {
+    const paragraphs = reflowLines([
+      line("Fungi possess a cell wall made up of chitin and polysaccharides.", 57, 516),
+      line("Like animals, fungi are heterotrophic in nutrition. But unlike", 57, 492),
+    ]);
+    expect(paragraphs).toHaveLength(2);
+  });
+
+  // A fixed 40-character minimum worked on the main column and wrongly left
+  // the sample sidebar's ~25-character lines unjoined. The threshold has to be
+  // relative to the block's own typical line width.
+  it("joins a narrow column's short lines", () => {
+    const paragraphs = reflowLines([
+      line("So far, you have studied", 411, 711),
+      line("bacteria, and protists. In", 411, 697),
+      line("this section, you will learn", 411, 683),
+      line("about the kingdom Fungi.", 411, 669),
+    ]);
+    expect(paragraphs).toEqual([
+      "So far, you have studied bacteria, and protists. In this section, you will learn about the kingdom Fungi.",
+    ]);
+  });
+
+  it("keeps each list item on its own", () => {
+    const paragraphs = reflowLines([
+      line("At the end of this section, the student will be able to:", 66, 726),
+      line("• describe the kingdom fungi and give example of organisms", 81, 709),
+      line("• describe the importance of fungi", 81, 694),
+    ]);
+    expect(paragraphs).toHaveLength(3);
+  });
+
+  it("keeps a numbered list item on its own", () => {
+    const paragraphs = reflowLines([
+      line("Follow these rules in the laboratory", 57, 600),
+      line("3. Dressing for the laboratory", 57, 580),
+    ]);
+    expect(paragraphs).toHaveLength(2);
+  });
+
+  it("does not join a short line that is really a heading", () => {
+    const paragraphs = reflowLines([
+      line("What are fungi?", 57, 662),
+      line("Fungi are eukaryotic organisms that include micro-organisms such as", 57, 638),
+      line("yeasts, moulds and mushrooms.", 57, 622),
+    ]);
+    expect(paragraphs[0]).toBe("What are fungi?");
+    expect(paragraphs).toHaveLength(2);
+  });
+
+  it("returns nothing for no lines", () => {
+    expect(reflowLines([])).toEqual([]);
+  });
+});

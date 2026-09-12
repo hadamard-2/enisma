@@ -130,3 +130,53 @@ export function toBlocks(lines: Line[]): Block[] {
 export function sortBlockLines(block: Block): Block {
   return { ...block, lines: [...block.lines].sort((a, b) => b.y - a.y) };
 }
+
+/**
+ * Share of a block's median line width above which a line is long enough to
+ * read as a wrapped continuation rather than a deliberately short one.
+ */
+export const REFLOW_WIDTH_RATIO = 0.8;
+
+/** True for a line opening a bulleted or numbered list item. */
+function startsListItem(text: string): boolean {
+  return /^\s*([•·▪—–-]|\(?\d+[.)])\s/.test(text);
+}
+
+/** True for a line whose last visible character closes a sentence. */
+function endsSentence(text: string): boolean {
+  return /[.!?:;]["'"')\]]?$/.test(text);
+}
+
+/**
+ * Join hard-wrapped lines back into paragraphs.
+ *
+ * A line continues the previous one unless the previous ended a sentence, the
+ * current opens a list item, or the previous was short enough to have ended
+ * deliberately — a heading, say. That last test is measured against the
+ * block's own median line width, not a fixed character count: an absolute
+ * threshold reflowed the sample textbook's main column correctly while leaving
+ * its narrow sidebar untouched.
+ */
+export function reflowLines(lines: Line[]): string[] {
+  if (lines.length === 0) return [];
+
+  const widths = lines.map((l) => l.text.length).sort((a, b) => a - b);
+  const median = widths[Math.floor(widths.length / 2)];
+  const continuationMin = median * REFLOW_WIDTH_RATIO;
+
+  const paragraphs: string[] = [];
+  for (const line of lines) {
+    const previous = paragraphs[paragraphs.length - 1];
+    const continues =
+      previous !== undefined &&
+      !endsSentence(previous) &&
+      !startsListItem(line.text) &&
+      previous.length >= continuationMin;
+    if (continues) {
+      paragraphs[paragraphs.length - 1] = `${previous} ${line.text}`;
+    } else {
+      paragraphs.push(line.text);
+    }
+  }
+  return paragraphs;
+}
