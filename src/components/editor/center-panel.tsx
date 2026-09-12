@@ -23,6 +23,7 @@ export function CenterPanel({
   view,
   done,
   onToggleDone,
+  noTextLayer,
 }: {
   page: number;
   pdfPath: string;
@@ -35,6 +36,11 @@ export function CenterPanel({
   /** Whether the active page is marked done. */
   done: boolean;
   onToggleDone: () => void;
+  /**
+   * This page was extracted and holds no text — a scanned page, most likely.
+   * Distinct from text simply not having arrived yet, which is transient.
+   */
+  noTextLayer: boolean;
 }) {
   const { t } = useTranslation();
   const wordCount = text.split(/\s+/).filter(Boolean).length;
@@ -72,7 +78,7 @@ export function CenterPanel({
           <>
             {text === "" && (
               <div className="pointer-events-none absolute px-1 font-serif text-base text-ink-3 italic">
-                {t("center.emptyText")}
+                {t(noTextLayer ? "center.noTextLayer" : "center.extracting")}
               </div>
             )}
             <textarea

@@ -108,6 +108,7 @@ function Editor({
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
+  const [noTextLayer, setNoTextLayer] = useState(false);
   const savedTextRef = useRef("");
   // Which page `text`/`savedTextRef` truthfully represent right now, or null
   // while no load has resolved yet. Only the loader's `.then()` below may
@@ -255,6 +256,7 @@ function Editor({
         savedTextRef.current = value;
         textPageRef.current = activePage;
         setText(value);
+        setNoTextLayer(p.sourceText === "" && (p.editedText ?? "") === "");
         setSaved(true);
         setLoadError(null);
       },
@@ -268,6 +270,7 @@ function Editor({
         textPageRef.current = null;
         savedTextRef.current = "";
         setText("");
+        setNoTextLayer(false);
         setSaved(true);
         setLoadError(String(e));
       },
@@ -544,6 +547,7 @@ function Editor({
               <CenterPanel
                 page={activePage}
                 pdfPath={project.pdfPath}
+                noTextLayer={noTextLayer}
                 text={text}
                 setText={setText}
                 saved={saved}
