@@ -13,6 +13,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ResizeBorders } from "./resize-borders";
 
 /** Window commands are all no-ops outside the desktop shell (`bun run dev`). */
 function win(fn: "minimize" | "toggleMaximize" | "close") {
@@ -29,8 +30,8 @@ function win(fn: "minimize" | "toggleMaximize" | "close") {
  * also needs its own permission in `capabilities/default.json` — the default
  * set can only *read* window state, so a missing one fails silently at runtime.
  *
- * Note the window is NOT resizable by its edges while decorations are off;
- * restoring that needs our own hit zones calling `startResizeDragging`.
+ * The compositor's resize border goes with the decorations, so `ResizeBorders`
+ * puts its own grips back around the whole window.
  */
 export function TitleBar() {
   const [maximized, setMaximized] = useState(false);
@@ -74,13 +75,19 @@ export function TitleBar() {
   }, [toggleFullscreen]);
 
   return (
-    <div
-      data-tauri-drag-region
-      className="flex h-9 shrink-0 items-center justify-between border-b border-line bg-surface-2 pr-1 pl-1.5 select-none"
-    >
-      <AppMenus fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} />
-      <WindowControls maximized={maximized} />
-    </div>
+    <>
+      <ResizeBorders disabled={maximized || fullscreen} />
+      <div
+        data-tauri-drag-region
+        className="flex h-9 shrink-0 items-center justify-between border-b border-line bg-surface-2 pr-1 pl-1.5 select-none"
+      >
+        <AppMenus
+          fullscreen={fullscreen}
+          onToggleFullscreen={toggleFullscreen}
+        />
+        <WindowControls maximized={maximized} />
+      </div>
+    </>
   );
 }
 
@@ -113,7 +120,11 @@ function AppMenus({
         onHover={openOnHover}
       >
         <Item label="Back to library" disabled={!c.back} onSelect={c.back} />
-        <Item label="Import PDF…" disabled={!c.importPdf} onSelect={c.importPdf} />
+        <Item
+          label="Import PDF…"
+          disabled={!c.importPdf}
+          onSelect={c.importPdf}
+        />
         <Item label="Export audiobook…" disabled onSelect={c.exportAudiobook} />
         <Sep />
         <Item
@@ -321,7 +332,11 @@ function Item({
           them together instead of pushing one to the middle. */}
       <span className="ml-auto flex items-center gap-2">
         {checked && <Check className="text-teal-ink" strokeWidth={2.4} />}
-        {shortcut && <DropdownMenuShortcut className="ml-0">{shortcut}</DropdownMenuShortcut>}
+        {shortcut && (
+          <DropdownMenuShortcut className="ml-0">
+            {shortcut}
+          </DropdownMenuShortcut>
+        )}
       </span>
     </DropdownMenuItem>
   );
@@ -381,7 +396,7 @@ function WindowControls({ maximized }: { maximized: boolean }) {
       >
         <Square size={12.5} strokeWidth={2.8} />
       </ControlButton>
-      <ControlButton label="Close" danger onClick={() => win("close")}>
+      <ControlButton label="Close" onClick={() => win("close")}>
         <X size={16} strokeWidth={2.6} />
       </ControlButton>
     </div>
@@ -390,12 +405,10 @@ function WindowControls({ maximized }: { maximized: boolean }) {
 
 function ControlButton({
   label,
-  danger,
   onClick,
   children,
 }: {
   label: string;
-  danger?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -406,7 +419,7 @@ function ControlButton({
       title={label}
       className={cn(
         "grid size-7 cursor-pointer place-items-center rounded-md text-ink-2 transition-colors",
-        danger ? "hover:bg-rose hover:text-surface" : "hover:bg-paper-3 hover:text-ink",
+        "hover:bg-paper-3 hover:text-ink",
       )}
     >
       {children}
