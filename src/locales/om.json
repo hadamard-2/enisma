@@ -153,6 +153,18 @@
     "importing": {
       "message": "Galchaa jira…",
       "context": "Replaces the Import button label while the file is being copied. Note the single-character ellipsis."
+    },
+    "extracting": {
+      "message": "Barreeffama dubbisaa jira…",
+      "context": "Replaces the Import button label while the PDF's text is being extracted, before the project is created. Takes about a second. Note the single-character ellipsis."
+    },
+    "scannedWarning": {
+      "message": "PDF kun kan iskaanii fakkaata — fuulota {total} keessaa {empty} sarara barreeffamaa hin qaban. Enisma barreeffama iskaanii amma dubbisuu waan hin dandeenyeef, fuulonni hedduun duwwaa ta'u.",
+      "context": "Warning inside the import dialog, shown before the project is created. {empty} and {total} are page counts. The user can still choose to import."
+    },
+    "importAnyway": {
+      "message": "Haa ta'uyyuu galchi",
+      "context": "Button. Confirms importing a PDF that appears to be scanned, accepting that most pages will be empty."
     }
   },
   "settings": {
@@ -393,6 +405,14 @@
     "pageDoneTooltipOff": {
       "message": "Fuula kana akka xumurameetti mallatteessi",
       "context": "Tooltip on the 'Page done' button when the page is not yet marked finished."
+    },
+    "noTextLayer": {
+      "message": "Fuulli kun sarara barreeffamaa hin qabu, kanaaf wanti baafamu hin jiru. Enisma barreeffama iskaanii amma dubbisuu hin danda'u — fuula kana as irratti barreessuu dandeessa.",
+      "context": "Faint placeholder inside the empty text editor, shown when extraction ran and found no text on this page — typically a scanned page. Should make clear this is expected, not a failure, and that typing is the way forward."
+    },
+    "extracting": {
+      "message": "Barreeffama kitaaba kanaa dubbisaa jira…",
+      "context": "Faint placeholder inside the empty text editor while extraction is filling in a project that was missing its text. Brief and rare. Note the single-character ellipsis."
     }
   },
   "pdf": {

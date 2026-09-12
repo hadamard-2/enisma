@@ -153,6 +153,18 @@
     "importing": {
       "message": "Importing…",
       "context": "Replaces the Import button label while the file is being copied. Note the single-character ellipsis."
+    },
+    "extracting": {
+      "message": "Reading the text…",
+      "context": "Replaces the Import button label while the PDF's text is being extracted, before the project is created. Takes about a second. Note the single-character ellipsis."
+    },
+    "scannedWarning": {
+      "message": "This PDF looks scanned — {empty} of {total} pages have no text layer. Enisma cannot read scanned text yet, so most pages would be empty.",
+      "context": "Warning inside the import dialog, shown before the project is created. {empty} and {total} are page counts. The user can still choose to import."
+    },
+    "importAnyway": {
+      "message": "Import anyway",
+      "context": "Button. Confirms importing a PDF that appears to be scanned, accepting that most pages will be empty."
     }
   },
   "settings": {
@@ -393,6 +405,14 @@
     "pageDoneTooltipOff": {
       "message": "Mark this page done",
       "context": "Tooltip on the 'Page done' button when the page is not yet marked finished."
+    },
+    "noTextLayer": {
+      "message": "This page has no text layer, so there is nothing to extract. Enisma cannot read scanned text yet — you can type this page here.",
+      "context": "Faint placeholder inside the empty text editor, shown when extraction ran and found no text on this page — typically a scanned page. Should make clear this is expected, not a failure, and that typing is the way forward."
+    },
+    "extracting": {
+      "message": "Reading the text from this book…",
+      "context": "Faint placeholder inside the empty text editor while extraction is filling in a project that was missing its text. Brief and rare. Note the single-character ellipsis."
     }
   },
   "pdf": {

@@ -153,6 +153,18 @@
     "importing": {
       "message": "ብምእታው…",
       "context": "Replaces the Import button label while the file is being copied. Note the single-character ellipsis."
+    },
+    "extracting": {
+      "message": "ጽሑፍ ብምንባብ…",
+      "context": "Replaces the Import button label while the PDF's text is being extracted, before the project is created. Takes about a second. Note the single-character ellipsis."
+    },
+    "scannedWarning": {
+      "message": "እዚ PDF ስካን ዝተገብረ ይመስል — ካብ {total} ገጻት {empty} ናይ ጽሑፍ ንብርብር የብለንን። Enisma ስካን ዝተገብረ ጽሑፍ ክሳብ ሕጂ ከንብብ ስለዘይክእል፣ መብዛሕትአን ገጻት ባዶ ክኾና እየን።",
+      "context": "Warning inside the import dialog, shown before the project is created. {empty} and {total} are page counts. The user can still choose to import."
+    },
+    "importAnyway": {
+      "message": "ብዝኾነ ኣእቱ",
+      "context": "Button. Confirms importing a PDF that appears to be scanned, accepting that most pages will be empty."
     }
   },
   "settings": {
@@ -393,6 +405,14 @@
     "pageDoneTooltipOff": {
       "message": "ነዚ ገጽ ከም ዝተዛዘመ ምልክት ግበር",
       "context": "Tooltip on the 'Page done' button when the page is not yet marked finished."
+    },
+    "noTextLayer": {
+      "message": "እዚ ገጽ ናይ ጽሑፍ ንብርብር የብሉን፣ ስለዚ ዝወጽእ ጽሑፍ የለን። Enisma ስካን ዝተገብረ ጽሑፍ ክሳብ ሕጂ ከንብብ ኣይክእልን — ነዚ ገጽ ኣብዚ ክትጽሕፍ ትኽእል ኢኻ።",
+      "context": "Faint placeholder inside the empty text editor, shown when extraction ran and found no text on this page — typically a scanned page. Should make clear this is expected, not a failure, and that typing is the way forward."
+    },
+    "extracting": {
+      "message": "ካብዚ መጽሓፍ ጽሑፍ ብምንባብ…",
+      "context": "Faint placeholder inside the empty text editor while extraction is filling in a project that was missing its text. Brief and rare. Note the single-character ellipsis."
     }
   },
   "pdf": {

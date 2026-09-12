@@ -153,6 +153,18 @@
     "importing": {
       "message": "በማስገባት ላይ…",
       "context": "Replaces the Import button label while the file is being copied. Note the single-character ellipsis."
+    },
+    "extracting": {
+      "message": "ጽሑፉን በማንበብ ላይ…",
+      "context": "Replaces the Import button label while the PDF's text is being extracted, before the project is created. Takes about a second. Note the single-character ellipsis."
+    },
+    "scannedWarning": {
+      "message": "ይህ PDF የተቃኘ ይመስላል — ከ{total} ገጾች {empty} የጽሑፍ ንብርብር የላቸውም። Enisma እስካሁን የተቃኘ ጽሑፍ ማንበብ ስለማይችል፣ አብዛኞቹ ገጾች ባዶ ይሆናሉ።",
+      "context": "Warning inside the import dialog, shown before the project is created. {empty} and {total} are page counts. The user can still choose to import."
+    },
+    "importAnyway": {
+      "message": "ለማንኛውም አስገባ",
+      "context": "Button. Confirms importing a PDF that appears to be scanned, accepting that most pages will be empty."
     }
   },
   "settings": {
@@ -393,6 +405,14 @@
     "pageDoneTooltipOff": {
       "message": "ይህን ገጽ እንደተጠናቀቀ ምልክት ያድርጉ",
       "context": "Tooltip on the 'Page done' button when the page is not yet marked finished."
+    },
+    "noTextLayer": {
+      "message": "ይህ ገጽ የጽሑፍ ንብርብር የለውም፣ ስለዚህ የሚወሰድ ጽሑፍ የለም። Enisma እስካሁን የተቃኘ ጽሑፍ ማንበብ አይችልም — ይህን ገጽ እዚህ መተየብ ይችላሉ።",
+      "context": "Faint placeholder inside the empty text editor, shown when extraction ran and found no text on this page — typically a scanned page. Should make clear this is expected, not a failure, and that typing is the way forward."
+    },
+    "extracting": {
+      "message": "ከዚህ መጽሐፍ ጽሑፉን በማንበብ ላይ…",
+      "context": "Faint placeholder inside the empty text editor while extraction is filling in a project that was missing its text. Brief and rare. Note the single-character ellipsis."
     }
   },
   "pdf": {
