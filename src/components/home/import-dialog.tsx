@@ -17,7 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { LANGUAGES, languageLabelKey } from "@/lib/languages";
-import { importProject } from "@/lib/api";
+import { importProject, readPdfBytes } from "@/lib/api";
+import { extractFromBytes } from "@/lib/extract-open";
 
 export function ImportDialog({
   srcPath,
@@ -34,13 +35,44 @@ export function ImportDialog({
   const [language, setLanguage] = useState<string>("en");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Text already extracted from the picked PDF, held back because the book
+   * looks scanned. Keeping it means confirming does not extract twice.
+   */
+  const [scanned, setScanned] = useState<{
+    pageTexts: string[];
+    emptyPages: number;
+  } | null>(null);
 
-  async function confirm() {
+  // A newly picked file gets a fresh dialog (Home remounts it per pick), so
+  // the only stale case to guard is the user backing out of the warning.
+  function cancelWarning() {
+    setScanned(null);
+    onCancel();
+  }
+
+  /**
+   * Extract first, create second.
+   *
+   * Extraction happens before any row exists, which is what lets the scanned
+   * warning below offer a real cancel: nothing has been written, so there is
+   * nothing to undo.
+   */
+  async function confirm(force = false) {
     if (!srcPath || !title.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      onImported(await importProject(title.trim(), language, srcPath, []));
+      let pageTexts = scanned?.pageTexts;
+      if (!pageTexts) {
+        const result = await extractFromBytes(await readPdfBytes(srcPath));
+        pageTexts = result.pageTexts;
+        if (result.looksScanned && !force) {
+          setScanned({ pageTexts, emptyPages: result.emptyPages });
+          return;
+        }
+      }
+      onImported(await importProject(title.trim(), language, srcPath, pageTexts));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -90,14 +122,30 @@ export function ImportDialog({
               {error}
             </div>
           )}
+          {scanned && !error && (
+            <div className="rounded-md border border-line bg-paper-2 px-3 py-2 text-[12.5px] text-amber-ink">
+              {t("import.scannedWarning", {
+                empty: scanned.emptyPages,
+                total: scanned.pageTexts.length,
+              })}
+            </div>
+          )}
         </div>
 
         <DialogFooter className="border-t-0">
-          <Button variant="outline" onClick={onCancel} disabled={busy}>
+          <Button variant="outline" onClick={cancelWarning} disabled={busy}>
             {t("import.cancel")}
           </Button>
-          <Button onClick={confirm} disabled={busy || !title.trim()}>
-            {t(busy ? "import.importing" : "import.confirm")}
+          <Button onClick={() => confirm(scanned !== null)} disabled={busy || !title.trim()}>
+            {t(
+              busy
+                ? scanned
+                  ? "import.importing"
+                  : "import.extracting"
+                : scanned
+                  ? "import.importAnyway"
+                  : "import.confirm",
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
