@@ -52,3 +52,14 @@ export const savePageText = (projectId: string, pageNo: number, text: string) =>
 
 export const setPageDone = (projectId: string, pageNo: number, done: boolean) =>
   invoke<void>("set_page_done_cmd", { projectId, pageNo, done });
+
+/**
+ * Read a picked PDF's bytes for extraction.
+ *
+ * The command returns a raw IPC response, which arrives as an ArrayBuffer.
+ * The array fallback keeps this working if it ever arrives JSON-encoded.
+ */
+export const readPdfBytes = async (path: string): Promise<Uint8Array> => {
+  const bytes = await invoke<ArrayBuffer | number[]>("read_pdf_bytes_cmd", { path });
+  return bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes);
+};

@@ -301,6 +301,16 @@ pub fn set_page_done_cmd(
     set_page_done(&conn, &project_id, page_no, done).map_err(|e| e.to_string())
 }
 
+/// Hand a picked PDF's bytes to the webview so pdf.js can extract its text.
+///
+/// Returns `tauri::ipc::Response`, which travels as raw bytes rather than
+/// JSON — an 11 MB textbook encoded as a JSON number array would not be
+/// acceptable. `async` so a large read does not block the IPC dispatch thread.
+#[tauri::command(async)]
+pub fn read_pdf_bytes_cmd(path: String) -> Result<tauri::ipc::Response, String> {
+    crate::pdf::read_source_bytes(std::path::Path::new(&path)).map(tauri::ipc::Response::new)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
