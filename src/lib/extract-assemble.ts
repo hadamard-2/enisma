@@ -87,3 +87,46 @@ export function toLines(items: RawItem[]): Line[] {
     })
     .filter((line) => line.text !== "");
 }
+
+/** A run of lines sharing a left edge — a column, a sidebar, or a header. */
+export type Block = { x: number; lines: Line[] };
+
+/**
+ * Largest left-edge difference, in PDF units, still counted as the same block.
+ * Wide enough to keep a bullet's indent with its paragraph, narrow enough to
+ * separate a main column from a sidebar.
+ */
+export const COLUMN_GAP = 40;
+
+/**
+ * Segment a page's lines into blocks at left-edge discontinuities.
+ *
+ * This is segmentation, not analysis: no block is classified, and their
+ * relative order is pdf.js's. That order already keeps side-by-side content
+ * contiguous on the sample textbook, which is why column analysis is out of
+ * scope for v0 — see the spec's non-goals.
+ */
+export function toBlocks(lines: Line[]): Block[] {
+  const blocks: Block[] = [];
+  let current: Block | null = null;
+  for (const line of lines) {
+    if (current && Math.abs(line.x - current.x) < COLUMN_GAP) {
+      current.lines.push(line);
+    } else {
+      current = { x: line.x, lines: [line] };
+      blocks.push(current);
+    }
+  }
+  return blocks;
+}
+
+/**
+ * Order a block's lines by descending y, which is reading order in PDF space.
+ *
+ * Scoped to a block on purpose. Sorting a whole page by y would interleave a
+ * sidebar back into the body it sits beside, undoing the one thing pdf.js's
+ * own ordering gets right.
+ */
+export function sortBlockLines(block: Block): Block {
+  return { ...block, lines: [...block.lines].sort((a, b) => b.y - a.y) };
+}

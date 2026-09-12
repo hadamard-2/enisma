@@ -61,3 +61,67 @@ describe("toLines", () => {
     expect(lines.map((l) => l.text)).toEqual(["a b"]);
   });
 });
+
+import { toBlocks, sortBlockLines, type Line } from "./extract-assemble";
+
+function line(text: string, x: number, y: number): Line {
+  return { text, x, y };
+}
+
+describe("toBlocks", () => {
+  // Sample page 40: header at x=342, main column at x=57, sidebar at x=433.
+  // pdf.js emits them as contiguous runs, so a left-edge break is enough to
+  // keep them apart without interpreting the layout.
+  it("breaks the stream where the left edge jumps", () => {
+    const blocks = toBlocks([
+      line("Unit Two: Characteristics and Classification of Organisms", 342, 794),
+      line("2.6.3. Kingdom Fungi", 57, 780),
+      line("Fungi are eukaryotic organisms", 57, 638),
+      line("Activity 2.15: Peer", 433, 741),
+      line("So far, you have studied", 411, 711),
+    ]);
+    expect(blocks.map((b) => b.lines.length)).toEqual([1, 2, 2]);
+  });
+
+  it("keeps an indented line in the same block as its paragraph", () => {
+    const blocks = toBlocks([line("At the end of this section:", 66, 726), line("• describe fungi", 81, 709)]);
+    expect(blocks).toHaveLength(1);
+  });
+
+  it("reports a block's left edge as its first line's", () => {
+    expect(toBlocks([line("a", 57, 600), line("b", 81, 580)])[0].x).toBe(57);
+  });
+
+  it("returns nothing for no lines", () => {
+    expect(toBlocks([])).toEqual([]);
+  });
+});
+
+describe("sortBlockLines", () => {
+  // Stream order is not reading order: on sample page 40 the "Objectives" box
+  // label was emitted after the bullets that belong underneath it. PDF y grows
+  // upward, so descending y is reading order.
+  it("puts a label emitted late back above its own bullets", () => {
+    const sorted = sortBlockLines({
+      x: 57,
+      lines: [
+        line("At the end of this section:", 66, 726),
+        line("• describe fungi", 81, 709),
+        line("• describe the importance of fungi", 81, 694),
+        line("Objectives", 65, 745),
+      ],
+    });
+    expect(sorted.lines.map((l) => l.text)).toEqual([
+      "Objectives",
+      "At the end of this section:",
+      "• describe fungi",
+      "• describe the importance of fungi",
+    ]);
+  });
+
+  it("does not mutate the block it is given", () => {
+    const block = { x: 57, lines: [line("a", 57, 400), line("b", 57, 600)] };
+    sortBlockLines(block);
+    expect(block.lines.map((l) => l.text)).toEqual(["a", "b"]);
+  });
+});
