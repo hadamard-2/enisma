@@ -265,3 +265,94 @@ describe("furnitureKeys", () => {
     expect(furnitureKeys(pages).size).toBe(0);
   });
 });
+
+import {
+  assembleDocument,
+  isEmptyPage,
+  looksScanned,
+  EMPTY_PAGE_MIN_CHARS,
+} from "./extract-assemble";
+
+describe("assembleDocument", () => {
+  /** Two pages sharing a running header, each with a wrapped paragraph. */
+  function twoPages(): RawItem[][] {
+    const bodies = [
+      [
+        "Page zero opens with a sentence that wraps across",
+        "two calm lines before it finally reaches the end.",
+      ],
+      [
+        "Page one starts with another sentence that wraps across",
+        "two brief lines before it eventually reaches the close.",
+      ],
+    ];
+    return bodies.map((lines) => [
+      item("Unit Two: Characteristics and Classification of Organisms", 342, 794),
+      item(lines[0], 57, 600),
+      item(lines[1], 57, 584),
+    ]);
+  }
+
+  it("returns one string per page", () => {
+    expect(assembleDocument(twoPages())).toHaveLength(2);
+  });
+
+  it("removes the running header and reflows the paragraph", () => {
+    const [first] = assembleDocument(twoPages());
+    expect(first).not.toContain("Unit Two");
+    expect(first).toBe("Page zero opens with a sentence that wraps across two calm lines before it finally reaches the end.");
+  });
+
+  it("separates blocks with a blank line", () => {
+    const [page] = assembleDocument([
+      [
+        item("Main column prose that is quite long indeed here.", 57, 600),
+        item("Sidebar text over here", 433, 580),
+      ],
+    ]);
+    expect(page).toBe("Main column prose that is quite long indeed here.\n\nSidebar text over here");
+  });
+
+  it("gives an empty string for a page with no items", () => {
+    expect(assembleDocument([[]])).toEqual([""]);
+  });
+
+  it("gives an empty string, not whitespace, for a page of blank items", () => {
+    expect(assembleDocument([[item("   ", 57, 600)]])).toEqual([""]);
+  });
+
+  it("collapses a doubled page number", () => {
+    const [page] = assembleDocument([[item("33", 300, 40), item("33", 300, 40)]]);
+    expect(page).toBe("33");
+  });
+});
+
+describe("isEmptyPage", () => {
+  it("counts a page below the character floor as empty", () => {
+    expect(isEmptyPage("Fixture page 1")).toBe(true);
+  });
+
+  it("does not count a page of real prose as empty", () => {
+    expect(isEmptyPage("x".repeat(EMPTY_PAGE_MIN_CHARS))).toBe(false);
+  });
+
+  it("ignores whitespace when counting", () => {
+    expect(isEmptyPage(" ".repeat(200))).toBe(true);
+  });
+});
+
+describe("looksScanned", () => {
+  it("is true when nearly every page is empty", () => {
+    expect(looksScanned(["", "", "", "", "x".repeat(100)])).toBe(true);
+  });
+
+  // The sample textbook has 3 empty pages out of 171 — cover and blanks.
+  it("is false for a book with a few blank pages", () => {
+    const pages = Array.from({ length: 171 }, (_, i) => (i < 3 ? "" : "x".repeat(100)));
+    expect(looksScanned(pages)).toBe(false);
+  });
+
+  it("is false for no pages at all", () => {
+    expect(looksScanned([])).toBe(false);
+  });
+});

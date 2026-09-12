@@ -235,3 +235,55 @@ export function furnitureKeys(pages: Block[][]): Set<string> {
   }
   return furniture;
 }
+
+/**
+ * Non-whitespace characters a page must hold to count as having text.
+ *
+ * On the sample textbook this flags exactly the two genuinely blank pages and
+ * leaves the 199-character cover alone.
+ */
+export const EMPTY_PAGE_MIN_CHARS = 50;
+
+/** Share of empty pages at which a document is reported as looking scanned. */
+export const SCANNED_PAGE_SHARE = 0.8;
+
+/**
+ * Assemble a whole document's items into one string per page.
+ *
+ * Whole-document rather than per-page because furniture removal needs every
+ * page to see what repeats. The repair path calls this too, for the same
+ * reason: a page assembled alone would keep the header every other page had
+ * stripped.
+ */
+export function assembleDocument(pages: RawItem[][]): string[] {
+  const blocksPerPage = pages.map((items) =>
+    toBlocks(toLines(dedupeItems(items))).map(sortBlockLines),
+  );
+  const furniture = furnitureKeys(blocksPerPage);
+
+  return blocksPerPage.map((blocks) =>
+    blocks
+      .map((block) => reflowLines(block.lines.filter((line) => !furniture.has(lineKey(line)))))
+      .filter((paragraphs) => paragraphs.length > 0)
+      .map((paragraphs) => paragraphs.join("\n\n"))
+      .join("\n\n")
+      .trim(),
+  );
+}
+
+/** True when a page holds too little text to be worth speaking. */
+export function isEmptyPage(text: string): boolean {
+  return text.replace(/\s/g, "").length < EMPTY_PAGE_MIN_CHARS;
+}
+
+/**
+ * True when a document looks like a scan rather than a digital PDF.
+ *
+ * Enisma has no OCR, so this is what lets import warn before creating a
+ * project whose every page would be blank.
+ */
+export function looksScanned(pageTexts: string[]): boolean {
+  if (pageTexts.length === 0) return false;
+  const empty = pageTexts.filter(isEmptyPage).length;
+  return empty / pageTexts.length >= SCANNED_PAGE_SHARE;
+}
