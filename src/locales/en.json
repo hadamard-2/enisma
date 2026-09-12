@@ -368,7 +368,7 @@
     },
     "emptyText": {
       "message": "No extracted text yet — type here, or wait for extraction.",
-      "context": "Faint placeholder inside the empty text editor. Tells the user their two options: type the text themselves, or wait for automatic extraction to fill it in."
+      "context": "Faint placeholder inside the empty text editor when the editor is empty and nothing is coming to fill it — either the page was extracted and the user cleared the text, or extraction never ran and no re-extraction is under way. Tells the user their two options: type the text themselves, or wait for automatic extraction to fill it in."
     },
     "stats": {
       "message": "{words, plural, one {# word} other {# words}} · ~{seconds}s spoken",
@@ -413,6 +413,10 @@
     "extracting": {
       "message": "Reading the text from this book…",
       "context": "Faint placeholder inside the empty text editor while extraction is filling in a project that was missing its text. Brief and rare. Note the single-character ellipsis."
+    },
+    "repairError": {
+      "message": "Enisma could not re-read this book's text: {error}",
+      "context": "Shown under the text editor when re-reading this book's text failed. {error} is an untranslated technical message. 'Enisma' is the app name and stays as-is."
     }
   },
   "pdf": {

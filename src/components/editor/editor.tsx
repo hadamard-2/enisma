@@ -75,6 +75,12 @@ export function EditorRoute() {
   const navigate = useNavigate();
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [missing, setMissing] = useState(false);
+  // Whether a repair is genuinely in flight, and what it failed with. The
+  // placeholder shown on an empty page depends on the first, and neither can
+  // be inferred from `pagesMissingText`: a repair that failed leaves the
+  // count exactly where a repair that never started would.
+  const [repairing, setRepairing] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -91,6 +97,8 @@ export function EditorRoute() {
   useEffect(() => {
     if (!project || project.pagesMissingText === 0) return;
     let cancelled = false;
+    setRepairing(true);
+    setRepairError(null);
     (async () => {
       try {
         const { pageTexts } = await extractFromUrl(convertFileSrc(project.pdfPath));
@@ -104,9 +112,15 @@ export function EditorRoute() {
         // dependency on `pagesMissingText` sees the drop.
         setProject(await getProject(project.id));
       } catch (e) {
-        // A repair that fails leaves the pages as they were; the editor still
-        // works and the empty placeholder still explains itself.
+        // A repair that fails leaves the pages as they were. Nothing will
+        // retry, so the "reading the text…" placeholder must stop claiming
+        // otherwise, and the failure has to reach the user rather than only
+        // the console.
         console.error(e);
+        if (cancelled) return;
+        setRepairError(String(e));
+      } finally {
+        if (!cancelled) setRepairing(false);
       }
     })();
     return () => {
@@ -121,14 +135,28 @@ export function EditorRoute() {
   // the autosave state machine. Its in-flight guards compare page numbers, so
   // a same-numbered page in a different project could otherwise be adopted as
   // the baseline for text that came from the previous one.
-  return <Editor key={project.id} project={project} onBack={() => navigate("/")} />;
+  return (
+    <Editor
+      key={project.id}
+      project={project}
+      repairing={repairing}
+      repairError={repairError}
+      onBack={() => navigate("/")}
+    />
+  );
 }
 
 function Editor({
   project,
+  repairing,
+  repairError,
   onBack,
 }: {
   project: ProjectDetail;
+  /** Whether a re-extraction of this project is in flight. */
+  repairing: boolean;
+  /** Non-null when that re-extraction failed; untranslated. */
+  repairError: string | null;
   onBack: () => void;
 }) {
   const { t } = useTranslation();
@@ -144,7 +172,9 @@ function Editor({
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
-  const [noTextLayer, setNoTextLayer] = useState(false);
+  // This page's stored extraction result, kept apart from the live buffer:
+  // null = never extracted, '' = extracted and the page held no text.
+  const [sourceText, setSourceText] = useState<string | null>(null);
   const savedTextRef = useRef("");
   // Which page `text`/`savedTextRef` truthfully represent right now, or null
   // while no load has resolved yet. Only the loader's `.then()` below may
@@ -292,7 +322,7 @@ function Editor({
   // when a repair affecting the active page completes. Without this
   // dependency the "reading the text from this book" placeholder — shown
   // because the page had no text yet — stays on screen forever, since
-  // `noTextLayer`/`text` never see the write.
+  // `sourceText`/`text` never see the write.
   useEffect(() => {
     let cancelled = false;
     const load = writeChainRef.current
@@ -324,7 +354,7 @@ function Editor({
         savedTextRef.current = value;
         textPageRef.current = activePage;
         setText(value);
-        setNoTextLayer(p.sourceText === "" && (p.editedText ?? "") === "");
+        setSourceText(p.sourceText);
         setSaved(true);
         setLoadError(null);
       },
@@ -338,7 +368,7 @@ function Editor({
         textPageRef.current = null;
         savedTextRef.current = "";
         setText("");
-        setNoTextLayer(false);
+        setSourceText(null);
         setSaved(true);
         setLoadError(String(e));
       },
@@ -615,7 +645,9 @@ function Editor({
               <CenterPanel
                 page={activePage}
                 pdfPath={project.pdfPath}
-                noTextLayer={noTextLayer}
+                sourceText={sourceText}
+                repairing={repairing}
+                repairError={repairError}
                 text={text}
                 setText={setText}
                 saved={saved}

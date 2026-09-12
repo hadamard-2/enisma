@@ -258,7 +258,7 @@ pub fn replace_source_text(
 
     if page_texts.len() as i64 != page_count {
         return Err(format!(
-            "extracted {} pages but the project has {page_count}",
+            "cannot re-read this book: the PDF now yields {} pages, but the project was imported with {page_count}",
             page_texts.len()
         ));
     }

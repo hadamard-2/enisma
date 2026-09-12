@@ -9,6 +9,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { placeholderFor } from "@/lib/page-placeholder";
 import { PdfViewer } from "./pdf-viewer";
 
 export type View = "pdf" | "split" | "edit";
@@ -23,7 +24,9 @@ export function CenterPanel({
   view,
   done,
   onToggleDone,
-  noTextLayer,
+  sourceText,
+  repairing,
+  repairError,
 }: {
   page: number;
   pdfPath: string;
@@ -36,13 +39,15 @@ export function CenterPanel({
   /** Whether the active page is marked done. */
   done: boolean;
   onToggleDone: () => void;
-  /**
-   * This page was extracted and holds no text — a scanned page, most likely.
-   * Distinct from text simply not having arrived yet, which is transient.
-   */
-  noTextLayer: boolean;
+  /** This page's stored extraction: null = never extracted, '' = nothing found. */
+  sourceText: string | null;
+  /** Whether a re-extraction is in flight for this project. */
+  repairing: boolean;
+  /** Non-null when the re-extraction failed; the text is untranslated. */
+  repairError: string | null;
 }) {
   const { t } = useTranslation();
+  const placeholder = placeholderFor({ sourceText, editedText: text, repairing });
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   const seconds = Math.round(text.length / 14);
   const split = useDefaultLayout({
@@ -76,9 +81,9 @@ export function CenterPanel({
           </div>
         ) : (
           <>
-            {text === "" && (
+            {placeholder && (
               <div className="pointer-events-none absolute px-1 font-serif text-base text-ink-3 italic">
-                {t(noTextLayer ? "center.noTextLayer" : "center.extracting")}
+                {t(`center.${placeholder}`)}
               </div>
             )}
             <textarea
@@ -88,6 +93,13 @@ export function CenterPanel({
               style={{ letterSpacing: "0.005em" }}
             />
           </>
+        )}
+        {/* A failed repair is the user's business: without this the page just
+            sits there empty with no sign that anything was attempted. */}
+        {repairError && (
+          <div className="mt-2.5 px-1 text-[12.5px] text-amber-ink">
+            {t("center.repairError", { error: repairError })}
+          </div>
         )}
         <div className="mt-2.5 flex justify-between border-t border-dashed border-line pt-2.5 text-[11px] text-ink-3">
           <span>
