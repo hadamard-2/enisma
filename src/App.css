@@ -93,7 +93,7 @@
 }
 
 @theme inline {
-  --font-sans: "Google Sans Flex", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: "Google Sans Flex Variable", "Noto Sans Ethiopic Variable", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-serif: var(--font-sans);
   --font-mono: var(--font-sans);
 
