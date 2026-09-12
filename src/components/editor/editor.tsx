@@ -14,15 +14,18 @@ import {
   useDefaultLayout,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   getPage,
   getProject,
+  savePageSourceText,
   savePageText,
   setPageDone,
   updateProject,
   type PageMeta,
   type ProjectDetail,
 } from "@/lib/api";
+import { extractFromUrl } from "@/lib/extract-open";
 import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
 import { cn } from "@/lib/utils";
 import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
@@ -77,6 +80,36 @@ export function EditorRoute() {
     if (!id) return;
     getProject(id).then(setProject).catch(() => setMissing(true));
   }, [id]);
+
+  // Re-extract a project whose pages have no text. This covers a project
+  // imported before extraction existed, and an interrupted write.
+  //
+  // The whole document is re-extracted, not just the missing pages: removing
+  // running headers depends on seeing what repeats across every page, so a
+  // page assembled alone would keep the header the rest of the book had
+  // stripped. It costs about a second and leaves `edited_text` untouched.
+  useEffect(() => {
+    if (!project || project.pagesMissingText === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { pageTexts } = await extractFromUrl(convertFileSrc(project.pdfPath));
+        if (cancelled) return;
+        await savePageSourceText(project.id, pageTexts);
+        if (cancelled) return;
+        // Re-read the project so `pagesMissingText` drops to zero and the
+        // active page picks up its new text.
+        setProject(await getProject(project.id));
+      } catch (e) {
+        // A repair that fails leaves the pages as they were; the editor still
+        // works and the empty placeholder still explains itself.
+        console.error(e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id, project?.pagesMissingText, project?.pdfPath]);
 
   if (missing) return <Navigate to="/" replace />;
   if (!project) return <div className="flex-1 bg-paper" />;
