@@ -25,6 +25,8 @@ export interface ProjectDetail {
   pdfPath: string;
   rate: number;
   pages: PageMeta[];
+  /** Pages never extracted (`source_text IS NULL`). Non-zero triggers repair. */
+  pagesMissingText: number;
 }
 
 export interface PageText {
@@ -56,6 +58,9 @@ export const savePageText = (projectId: string, pageNo: number, text: string) =>
 
 export const setPageDone = (projectId: string, pageNo: number, done: boolean) =>
   invoke<void>("set_page_done_cmd", { projectId, pageNo, done });
+
+export const savePageSourceText = (projectId: string, pageTexts: string[]) =>
+  invoke<void>("save_page_source_text_cmd", { projectId, pageTexts });
 
 /**
  * Read a picked PDF's bytes for extraction.

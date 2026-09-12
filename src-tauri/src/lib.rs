@@ -48,6 +48,7 @@ pub fn run() {
             project::update_project_cmd,
             project::get_page_cmd,
             project::save_page_text_cmd,
+            project::save_page_source_text_cmd,
             project::set_page_done_cmd,
         ])
         .build(tauri::generate_context!())

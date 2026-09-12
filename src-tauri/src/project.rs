@@ -110,6 +110,10 @@ pub struct ProjectDetail {
     pub pdf_path: String,
     pub rate: f64,
     pub pages: Vec<PageMeta>,
+    /// How many pages have never been extracted (`source_text IS NULL`).
+    /// Drives the editor's repair pass; `''` pages are extracted and do not
+    /// count.
+    pub pages_missing_text: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -120,10 +124,12 @@ pub struct PageText {
 }
 
 pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetail> {
-    let (title, language, page_count, pdf_path, rate) = conn.query_row(
-        "SELECT title, language, page_count, pdf_path, rate FROM projects WHERE id = ?1",
+    let (title, language, page_count, pdf_path, rate, pages_missing_text) = conn.query_row(
+        "SELECT title, language, page_count, pdf_path, rate,
+                (SELECT COUNT(*) FROM pages WHERE project_id = p.id AND source_text IS NULL)
+         FROM projects p WHERE id = ?1",
         [id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
     )?;
 
     let mut stmt = conn
@@ -137,7 +143,16 @@ pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetai
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    Ok(ProjectDetail { id: id.to_string(), title, language, page_count, pdf_path, rate, pages })
+    Ok(ProjectDetail {
+        id: id.to_string(),
+        title,
+        language,
+        page_count,
+        pdf_path,
+        rate,
+        pages,
+        pages_missing_text,
+    })
 }
 
 pub fn get_page(conn: &Connection, project_id: &str, page_no: i64) -> rusqlite::Result<PageText> {
@@ -223,6 +238,44 @@ fn touch(conn: &Connection, id: &str) -> rusqlite::Result<usize> {
     )
 }
 
+/// Replace every page's `source_text` for one project, in one transaction.
+///
+/// The repair path's only write. It deliberately does not touch `edited_text`,
+/// `done`, or the project's `updated_at`: a repair restores what extraction
+/// should have produced, and is not something the user did.
+pub fn replace_source_text(
+    conn: &mut Connection,
+    project_id: &str,
+    page_texts: &[String],
+) -> Result<(), String> {
+    let page_count: i64 = conn
+        .query_row(
+            "SELECT page_count FROM projects WHERE id = ?1",
+            params![project_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if page_texts.len() as i64 != page_count {
+        return Err(format!(
+            "extracted {} pages but the project has {page_count}",
+            page_texts.len()
+        ));
+    }
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare("UPDATE pages SET source_text = ?3 WHERE project_id = ?1 AND page_no = ?2")
+            .map_err(|e| e.to_string())?;
+        for (index, text) in page_texts.iter().enumerate() {
+            stmt.execute(params![project_id, (index + 1) as i64, text])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
 use tauri::State;
 
 use crate::{DataDir, Db};
@@ -296,6 +349,19 @@ pub fn save_page_text_cmd(
 ) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     save_page_text(&conn, &project_id, page_no, &text).map_err(|e| e.to_string())
+}
+
+/// Replace a project's extracted text. Used by the editor's repair pass.
+///
+/// `async` so re-writing a few hundred rows does not block the IPC thread.
+#[tauri::command(async)]
+pub fn save_page_source_text_cmd(
+    db: State<'_, Db>,
+    project_id: String,
+    page_texts: Vec<String>,
+) -> Result<(), String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    replace_source_text(&mut conn, &project_id, &page_texts)
 }
 
 #[tauri::command]
@@ -501,5 +567,75 @@ mod tests {
         seed(&mut conn, "abc", 2);
         let result = set_page_done(&conn, "nonexistent", 1, true);
         assert!(result.is_err(), "set_page_done should error for non-existent project");
+    }
+
+    #[test]
+    fn replace_source_text_overwrites_every_page_and_spares_edits() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(&mut conn, "p1", "T", "en", "projects/p1/source.pdf", 3,
+            &[String::new(), String::new(), String::new()]).unwrap();
+        save_page_text(&conn, "p1", 2, "my correction").unwrap();
+
+        super::replace_source_text(
+            &mut conn,
+            "p1",
+            &["one".to_string(), "two".to_string(), "three".to_string()],
+        )
+        .unwrap();
+
+        let mut stmt = conn
+            .prepare("SELECT source_text, edited_text FROM pages WHERE project_id = 'p1' ORDER BY page_no")
+            .unwrap();
+        let rows: Vec<(Option<String>, Option<String>)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(rows[0].0, Some("one".to_string()));
+        assert_eq!(rows[1].0, Some("two".to_string()));
+        assert_eq!(rows[2].0, Some("three".to_string()));
+        // The correction is what the user typed; a repair must never touch it.
+        assert_eq!(rows[1].1, Some("my correction".to_string()));
+    }
+
+    #[test]
+    fn replace_source_text_rejects_a_page_count_disagreement() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(&mut conn, "p1", "T", "en", "projects/p1/source.pdf", 3,
+            &[String::new(), String::new(), String::new()]).unwrap();
+
+        let err = super::replace_source_text(&mut conn, "p1", &["only one".to_string()]).unwrap_err();
+        assert!(err.contains("1"), "error should name the counts: {err}");
+    }
+
+    #[test]
+    fn replace_source_text_leaves_updated_at_alone() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(&mut conn, "p1", "T", "en", "projects/p1/source.pdf", 1,
+            &[String::new()]).unwrap();
+        let before: String = conn
+            .query_row("SELECT updated_at FROM projects WHERE id = 'p1'", [], |r| r.get(0))
+            .unwrap();
+
+        super::replace_source_text(&mut conn, "p1", &["text".to_string()]).unwrap();
+
+        let after: String = conn
+            .query_row("SELECT updated_at FROM projects WHERE id = 'p1'", [], |r| r.get(0))
+            .unwrap();
+        // Repair is not an edit. Touching the timestamp would reorder the
+        // library as though the user had just worked on the book.
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn get_project_counts_pages_with_no_source_text() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(&mut conn, "p1", "T", "en", "projects/p1/source.pdf", 3,
+            &[String::new(), String::new(), String::new()]).unwrap();
+        assert_eq!(get_project(&conn, "p1").unwrap().pages_missing_text, 0);
+
+        conn.execute("UPDATE pages SET source_text = NULL WHERE page_no = 2", []).unwrap();
+        assert_eq!(get_project(&conn, "p1").unwrap().pages_missing_text, 1);
     }
 }
