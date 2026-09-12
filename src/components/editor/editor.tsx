@@ -3,9 +3,7 @@ import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen,
   ChevronDown,
-  ChevronLeft,
   ChevronUp,
-  Download,
   FileText,
   PanelLeft,
   PanelRight,
@@ -27,7 +25,7 @@ import {
 import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
 import { cn } from "@/lib/utils";
 import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
-import { Button } from "@/components/ui/button";
+import { useRegisterCommands } from "@/lib/app-commands";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -95,11 +93,11 @@ function Editor({
   const [activePage, setActivePage] = useState(
     project.pages.find((p) => !p.done)?.pageNo ?? 1,
   );
+  const [title, setTitle] = useState(project.title);
   const [language, setLanguage] = useState<string>(project.language);
   const initialVoice = (PLACEHOLDER_VOICES[project.language] ?? [])[0] ?? "";
   const [voice, setVoice] = useState(initialVoice);
   const [speed, setSpeed] = useState(1.0);
-  const [pitch, setPitch] = useState(0.0);
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
@@ -398,6 +396,27 @@ function Editor({
     p.isCollapsed() ? p.expand() : p.collapse();
   };
 
+  // What the title bar's menus can do while the editor is on screen. The
+  // callbacks close over refs and stable setters, so rebuilding this only when
+  // the *displayed* state changes (the checkmarks) is enough.
+  useRegisterCommands(
+    useMemo(
+      () => ({
+        back: onBack,
+        canEdit: true,
+        savePage: sendPending,
+        togglePageDone: () => toggleDone(activePage),
+        pageDone: activeDone,
+        view,
+        setView,
+        toggleLeftPanel: () => leftPanelRef.current && toggleLeft(),
+        toggleRightPanel: () => rightPanelRef.current && toggleRight(),
+        canZoom: view !== "edit",
+      }),
+      [onBack, sendPending, activePage, activeDone, view],
+    ),
+  );
+
   useEffect(() => {
     function isTypingTarget(t: EventTarget | null) {
       if (!(t instanceof HTMLElement)) return false;
@@ -445,35 +464,21 @@ function Editor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-center gap-2 border-b border-line bg-surface-2 px-3 py-2.5">
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          onClick={onBack}
-          aria-label="Back to library"
-          title="Back to library"
-          className="-ml-0.5 text-ink-2"
-        >
-          <ChevronLeft className="size-5" />
-        </Button>
-
-        <input
-          defaultValue={project.title}
-          onBlur={(e) => updateProject(project.id, { title: e.target.value }).catch(console.error)}
-          className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-0.5 font-serif text-[15px] font-medium text-ink outline-none focus:border-line"
-        />
-
-        <Button size="default" onClick={() => console.log("Export audiobook (stub)")}>
-          <Download />
-          Export
-        </Button>
-      </header>
-
       <div className="relative flex min-h-0 flex-1">
         <FloatingPanelToggle
           side="left"
           collapsed={leftCollapsed}
           onClick={toggleLeft}
+        />
+        {/* Fixed width: ellipsised at rest, and the input's own horizontal
+            scroll takes over while it's focused for editing. */}
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={(e) => updateProject(project.id, { title: e.target.value }).catch(console.error)}
+          title={title}
+          aria-label="Book title"
+          className="absolute top-3 left-13 z-20 h-8 w-66 truncate rounded-md border border-transparent bg-transparent px-2 font-serif text-[15px] font-medium text-ink outline-none! hover:border-line focus:border-line focus:bg-surface focus:text-clip"
         />
         <FloatingViewToggle view={view} setView={setView} />
         <FloatingPanelToggle
@@ -517,6 +522,7 @@ function Editor({
                 totalPages={pages.length}
                 onPrev={() => gotoPage(-1)}
                 onNext={() => gotoPage(1)}
+                onGoto={setActivePage}
               />
               <CenterPanel
                 page={activePage}
@@ -554,8 +560,6 @@ function Editor({
               setVoice={setVoice}
               speed={speed}
               setSpeed={setSpeed}
-              pitch={pitch}
-              setPitch={setPitch}
               playing={playing}
               setPlaying={setPlaying}
               page={activePage}
@@ -643,12 +647,29 @@ function FloatingPagePill({
   totalPages,
   onPrev,
   onNext,
+  onGoto,
 }: {
   page: number;
   totalPages: number;
   onPrev: () => void;
   onNext: () => void;
+  /** Jump straight to a page number, ignoring the page list's filter. */
+  onGoto: (page: number) => void;
 }) {
+  // What's in the box while it's being typed into; resynced to `page` whenever
+  // the page changes underneath (arrows, page list, keyboard).
+  const [draft, setDraft] = useState(String(page));
+  useEffect(() => setDraft(String(page)), [page]);
+
+  function commit() {
+    const n = Number(draft);
+    if (!Number.isInteger(n) || n < 1 || n > totalPages) {
+      setDraft(String(page)); // Not a page — put the real one back.
+      return;
+    }
+    onGoto(n);
+  }
+
   return (
     // Same chrome as the view toggle in this row.
     <div className="absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-line bg-surface p-0.5 shadow-paper-sm">
@@ -661,9 +682,25 @@ function FloatingPagePill({
         <ChevronUp size={15} strokeWidth={1.7} />
       </button>
 
-      <span className="px-1.5 font-mono text-[12px]">
-        <span className="font-medium text-ink">{page}</span>
-        <span className="text-ink-3"> / {totalPages}</span>
+      <span className="flex items-center px-1 font-mono text-[14px]">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            else if (e.key === "Escape") {
+              setDraft(String(page));
+              e.currentTarget.blur();
+            }
+          }}
+          aria-label="Go to page"
+          title="Go to page"
+          className="rounded-sm bg-transparent text-center font-medium text-ink outline-none! hover:bg-paper-2 focus:bg-paper-2"
+          style={{ width: `${String(totalPages).length + 1}ch` }}
+        />
+        <span className="pr-1 text-ink-3">/ {totalPages}</span>
       </span>
 
       <button

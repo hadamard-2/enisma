@@ -20,8 +20,6 @@ export function SettingsPanel({
   setVoice,
   speed,
   setSpeed,
-  pitch,
-  setPitch,
   playing,
   setPlaying,
   page,
@@ -32,8 +30,6 @@ export function SettingsPanel({
   setVoice: (v: string) => void;
   speed: number;
   setSpeed: (n: number) => void;
-  pitch: number;
-  setPitch: (n: number) => void;
   playing: boolean;
   setPlaying: (p: boolean) => void;
   page: number;
@@ -102,57 +98,50 @@ export function SettingsPanel({
             suffix="×"
           />
         </Field>
-
-        <Field label="Pitch">
-          <LabeledSlider
-            value={pitch}
-            onChange={setPitch}
-            min={-1}
-            max={1}
-            step={0.1}
-          />
-        </Field>
       </div>
 
       <div className="mt-3 h-px bg-line" />
 
       <div className="px-4.5 py-4">
         <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-ink-3">
-          Preview · page {page}
+          Page {page}
         </div>
 
         <div className="rounded-xl border border-line bg-surface p-3.5 shadow-paper-sm">
           <Waveform playing={playing} />
 
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-1.5 flex justify-between font-mono text-[11px] text-ink-3">
+            <span>{playing ? "0:14" : "0:00"}</span>
+            <span>1:42</span>
+          </div>
+
+          {/* The play button is centred on the card, not on the row: the
+              side controls are laid out around it rather than sharing the
+              space with it. */}
+          <div className="relative mt-2.5 flex items-center justify-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Rewind"
+              className="text-ink-2"
+            >
+              <Rewind />
+            </Button>
             <button
               onClick={() => setPlaying(!playing)}
               aria-label={playing ? "Pause preview" : "Play preview"}
-              className="grid size-9.5 cursor-pointer place-items-center rounded-full bg-teal text-surface"
+              className="grid size-10 cursor-pointer place-items-center rounded-full bg-teal text-surface shadow-paper-sm transition-colors hover:bg-teal-ink"
             >
-              {playing ? <Pause size={16} /> : <Play size={16} />}
+              {playing ? <Pause size={17} /> : <Play size={17} className="ml-0.5" />}
             </button>
-            <div className="font-mono text-[11.5px] text-ink-3">
-              {playing ? "0:14 / 1:42" : "0:00 / 1:42"}
-            </div>
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Rewind"
-                className="text-ink-2"
-              >
-                <Rewind />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Forward"
-                className="text-ink-2"
-              >
-                <FastForward />
-              </Button>
-            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Forward"
+              className="text-ink-2"
+            >
+              <FastForward />
+            </Button>
           </div>
         </div>
 

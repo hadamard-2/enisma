@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ZOOM_EVENT, type ZoomCommand } from "@/lib/app-commands";
 import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { formatShortcut, MOD } from "@/lib/platform";
@@ -42,7 +43,7 @@ const RENDER_SETTLE_MS = 150;
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
 /**
- * Single-page PDF viewer: fit-to-width at 100%, zoomable with Ctrl/Cmd + wheel
+ * Single-page PDF viewer: the whole page fits at 100%, zoomable with Ctrl/Cmd + wheel
  * or Ctrl/Cmd + =/-/0, centred when the page is smaller than the viewport, and
  * carrying pdf.js's text layer so the page's own text can be selected.
  */
@@ -53,7 +54,7 @@ export function PdfViewer({ url, page }: { url: string; page: number }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pdfPage, setPdfPage] = useState<PDFPageProxy | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [width, setWidth] = useState(0);
+  const [box, setBox] = useState({ w: 0, h: 0 });
   const [zoom, setZoom] = useState(1);
   // Scroll position to restore once a zoom change has been laid out.
   const anchorRef = useRef<{ fx: number; fy: number; ax: number; ay: number } | null>(null);
@@ -105,9 +106,9 @@ export function PdfViewer({ url, page }: { url: string; page: number }) {
     scrollRef.current?.scrollTo(0, 0);
   }, [page]);
 
-  // Track the width fit-to-width is computed against: the scroller's outer
-  // width less a scrollbar, whether or not one is showing. Using the live
-  // inner width instead feeds back — near the fit boundary the page is too
+  // Track the box the fit is computed against: the scroller's outer size less
+  // a scrollbar on each axis, whether or not one is showing. Using the live
+  // inner size instead feeds back — near the fit boundary the page is too
   // tall, a scrollbar appears, the width shrinks, the page fits, the
   // scrollbar goes, the width grows — and the page flips between two sizes
   // every frame. (`scrollbar-gutter: stable` would be the CSS fix, but
@@ -115,7 +116,12 @@ export function PdfViewer({ url, page }: { url: string; page: number }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const measure = () => setWidth(Math.max(0, el.offsetWidth - SCROLLBAR));
+    const measure = () =>
+      setBox((prev) => {
+        const w = Math.max(0, el.offsetWidth - SCROLLBAR);
+        const h = Math.max(0, el.offsetHeight - SCROLLBAR);
+        return prev.w === w && prev.h === h ? prev : { w, h };
+      });
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     measure();
@@ -123,7 +129,18 @@ export function PdfViewer({ url, page }: { url: string; page: number }) {
   }, []);
 
   const base = pdfPage?.getViewport({ scale: 1 });
-  const scale = base && width ? (zoom * Math.max(width - 2 * PAD, 50)) / base.width : 0;
+  // Fit the whole page: whichever axis runs out first decides the scale, so a
+  // page taller than the pane fits its height and a wide one fits its width.
+  // At 100% the page is therefore always fully visible; zooming past that is
+  // what brings the scrollbars in.
+  const scale =
+    base && box.w && box.h
+      ? zoom *
+        Math.min(
+          Math.max(box.w - 2 * PAD, 50) / base.width,
+          Math.max(box.h - 2 * PAD, 50) / base.height,
+        )
+      : 0;
 
   // Rasterise at a scale that trails the layout scale, so a burst of zoom
   // steps or a panel drag stretches the current bitmap instead of restarting
@@ -261,8 +278,19 @@ export function PdfViewer({ url, page }: { url: string; page: number }) {
       else return;
       e.preventDefault();
     }
+    // Same three steps, arriving from the View menu instead of the keyboard.
+    function onZoom(e: Event) {
+      const kind = (e as CustomEvent<ZoomCommand>).detail;
+      if (kind === "in") zoomBy(ZOOM_KEY_STEP);
+      else if (kind === "out") zoomBy(1 / ZOOM_KEY_STEP);
+      else zoomBy(1 / zoom);
+    }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener(ZOOM_EVENT, onZoom);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(ZOOM_EVENT, onZoom);
+    };
   }, [zoomBy, zoom]);
 
   return (

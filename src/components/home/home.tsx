@@ -17,6 +17,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listProjects, type ProjectSummary } from "@/lib/api";
 import { relativeTime } from "@/lib/time";
 import { useTheme } from "@/lib/theme";
+import { useRegisterCommands } from "@/lib/app-commands";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,11 @@ export function Home() {
     });
     if (typeof chosen === "string") setPending(chosen);
   }
+
+  // File > Import PDF… is the same picker as the card on this page.
+  useRegisterCommands(
+    useMemo(() => ({ importPdf: () => void pickFile() }), []),
+  );
 
   const navItems = useMemo(
     () => [

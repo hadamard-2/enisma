@@ -14,6 +14,10 @@
   --line-2:       #C4C4C9;
   --surface:      #FBFBFC;
   --surface-2:    #F7F7F9;
+  /* Menus float above everything, so they step one shade away from the
+     surfaces behind them — lighter here, and lighter again in the dark
+     palette, where "raised" reads as lighter rather than brighter. */
+  --menu:         #FFFFFF;
 
   /* Accents */
   --teal:         oklch(58% 0.08 200);
@@ -70,6 +74,7 @@
   --line-2:       #34343A;
   --surface:      #1A1A1D;
   --surface-2:    #202024;
+  --menu:         #26262B;
 
   --teal:         oklch(72% 0.08 200);
   --teal-soft:    oklch(28% 0.03 200);
@@ -103,6 +108,7 @@
   --color-line-2: var(--line-2);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-menu: var(--menu);
 
   --color-teal: var(--teal);
   --color-teal-soft: var(--teal-soft);
