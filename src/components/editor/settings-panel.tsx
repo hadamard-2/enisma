@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FastForward, Pause, Play, Rewind } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { LANGUAGES, type LanguageCode } from "@/lib/languages";
+import { LANGUAGES, languageLabelKey, type LanguageCode } from "@/lib/languages";
 import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
 
 export function SettingsPanel({
@@ -34,6 +35,7 @@ export function SettingsPanel({
   setPlaying: (p: boolean) => void;
   page: number;
 }) {
+  const { t } = useTranslation();
   const voices = PLACEHOLDER_VOICES[language as LanguageCode] ?? [];
 
   useEffect(() => {
@@ -45,20 +47,20 @@ export function SettingsPanel({
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="px-4.5 pt-4 pb-2">
         <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-ink-3">
-          Audio settings
+          {t("ttsPanel.sectionLabel")}
         </div>
         <div className="font-serif text-lg font-medium text-ink">
-          Text-to-speech
+          {t("ttsPanel.heading")}
         </div>
         <div className="mt-1 text-xs text-ink-3">
-          Applied to all pages in this project.
+          {t("ttsPanel.subtitle")}
         </div>
       </div>
 
       <div className="my-2 h-px bg-line" />
 
       <div className="flex flex-col gap-4 px-4.5 py-2">
-        <Field label="Language">
+        <Field label={t("ttsPanel.language")}>
           <Select value={language} onValueChange={setLanguage}>
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -66,14 +68,14 @@ export function SettingsPanel({
             <SelectContent>
               {LANGUAGES.map((l) => (
                 <SelectItem key={l.code} value={l.code}>
-                  {l.label}
+                  {t(languageLabelKey(l.code))}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
 
-        <Field label="Voice">
+        <Field label={t("ttsPanel.voice")}>
           <Select value={voice} onValueChange={setVoice}>
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -88,7 +90,7 @@ export function SettingsPanel({
           </Select>
         </Field>
 
-        <Field label="Speaking rate">
+        <Field label={t("ttsPanel.speakingRate")}>
           <LabeledSlider
             value={speed}
             onChange={setSpeed}
@@ -104,7 +106,7 @@ export function SettingsPanel({
 
       <div className="px-4.5 py-4">
         <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-ink-3">
-          Page {page}
+          {t("ttsPanel.page", { n: page })}
         </div>
 
         <div className="rounded-xl border border-line bg-surface p-3.5 shadow-paper-sm">
@@ -122,14 +124,14 @@ export function SettingsPanel({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Rewind"
+              aria-label={t("ttsPanel.rewind")}
               className="text-ink-2"
             >
               <Rewind />
             </Button>
             <button
               onClick={() => setPlaying(!playing)}
-              aria-label={playing ? "Pause preview" : "Play preview"}
+              aria-label={t(playing ? "ttsPanel.pause" : "ttsPanel.play")}
               className="grid size-10 cursor-pointer place-items-center rounded-full bg-teal text-surface shadow-paper-sm transition-colors hover:bg-teal-ink"
             >
               {playing ? <Pause size={17} /> : <Play size={17} className="ml-0.5" />}
@@ -137,7 +139,7 @@ export function SettingsPanel({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Forward"
+              aria-label={t("ttsPanel.forward")}
               className="text-ink-2"
             >
               <FastForward />

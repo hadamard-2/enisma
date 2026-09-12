@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LANGUAGES } from "@/lib/languages";
+import { LANGUAGES, languageLabelKey } from "@/lib/languages";
 import { importProject } from "@/lib/api";
 
 export function ImportDialog({
@@ -27,6 +28,7 @@ export function ImportDialog({
   onCancel: () => void;
   onImported: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const stem = srcPath?.split(/[/\\]/).pop()?.replace(/\.pdf$/i, "") ?? "";
   const [title, setTitle] = useState(stem);
   const [language, setLanguage] = useState<string>("en");
@@ -50,20 +52,20 @@ export function ImportDialog({
     <Dialog open={srcPath !== null} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="grid-cols-1 sm:max-w-120">
         <DialogHeader>
-          <DialogTitle className="font-serif">Import a textbook</DialogTitle>
+          <DialogTitle className="font-serif">{t("import.title")}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-medium uppercase tracking-widest text-ink-3">
-              Title
+              {t("import.fieldTitle")}
             </label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-medium uppercase tracking-widest text-ink-3">
-              Language
+              {t("import.fieldLanguage")}
             </label>
             <Select value={language} onValueChange={setLanguage}>
               <SelectTrigger className="w-full">
@@ -72,7 +74,7 @@ export function ImportDialog({
               <SelectContent>
                 {LANGUAGES.map((l) => (
                   <SelectItem key={l.code} value={l.code}>
-                    {l.label}
+                    {t(languageLabelKey(l.code))}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -92,10 +94,10 @@ export function ImportDialog({
 
         <DialogFooter className="border-t-0">
           <Button variant="outline" onClick={onCancel} disabled={busy}>
-            Cancel
+            {t("import.cancel")}
           </Button>
           <Button onClick={confirm} disabled={busy || !title.trim()}>
-            {busy ? "Importing…" : "Import"}
+            {t(busy ? "import.importing" : "import.confirm")}
           </Button>
         </DialogFooter>
       </DialogContent>

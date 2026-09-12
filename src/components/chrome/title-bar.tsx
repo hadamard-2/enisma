@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, Minus, Square, X } from "lucide-react";
@@ -100,6 +101,7 @@ function AppMenus({
   fullscreen: boolean;
   onToggleFullscreen: () => void;
 }) {
+  const { t } = useTranslation();
   const c = useAppCommands();
   const edit = useEditActions();
   // Which menu is open, so that sliding the pointer across the strip switches
@@ -113,22 +115,22 @@ function AppMenus({
   return (
     <div className="flex items-center">
       <Menu
-        label="File"
+        label={t("menu.file")}
         menuKey="file"
         open={open}
         setOpen={setOpen}
         onHover={openOnHover}
       >
-        <Item label="Back to library" disabled={!c.back} onSelect={c.back} />
+        <Item label={t("menu.backToLibrary")} disabled={!c.back} onSelect={c.back} />
         <Item
-          label="Import PDF…"
+          label={t("menu.importPdf")}
           disabled={!c.importPdf}
           onSelect={c.importPdf}
         />
-        <Item label="Export audiobook…" disabled onSelect={c.exportAudiobook} />
+        <Item label={t("menu.exportAudiobook")} disabled onSelect={c.exportAudiobook} />
         <Sep />
         <Item
-          label="Quit"
+          label={t("menu.quit")}
           shortcut={formatShortcut(MOD, "Q")}
           onSelect={() => win("close")}
         />
@@ -137,7 +139,7 @@ function AppMenus({
       {/* Nothing in this menu means anything without a text field to act on,
           so the whole strip item goes dead on the library screen. */}
       <Menu
-        label="Edit"
+        label={t("menu.edit")}
         menuKey="edit"
         open={open}
         setOpen={setOpen}
@@ -145,57 +147,57 @@ function AppMenus({
         disabled={!c.canEdit}
       >
         <Item
-          label="Undo"
+          label={t("menu.undo")}
           shortcut={formatShortcut(MOD, "Z")}
           onSelect={() => edit("undo")}
         />
         <Item
-          label="Redo"
+          label={t("menu.redo")}
           shortcut={formatShortcut(MOD, SHIFT_KEY, "Z")}
           onSelect={() => edit("redo")}
         />
         <Sep />
         <Item
-          label="Save page"
+          label={t("menu.savePage")}
           shortcut={formatShortcut(MOD, "S")}
           disabled={!c.savePage}
           onSelect={c.savePage}
         />
         <Item
-          label="Mark page done"
+          label={t("menu.markPageDone")}
           checked={!!c.pageDone}
           disabled={!c.togglePageDone}
           onSelect={c.togglePageDone}
         />
         <Sep />
         <Item
-          label="Cut"
+          label={t("menu.cut")}
           shortcut={formatShortcut(MOD, "X")}
           onSelect={() => edit("cut")}
         />
         <Item
-          label="Copy"
+          label={t("menu.copy")}
           shortcut={formatShortcut(MOD, "C")}
           onSelect={() => edit("copy")}
         />
         <Item
-          label="Paste"
+          label={t("menu.paste")}
           shortcut={formatShortcut(MOD, "V")}
           onSelect={() => edit("paste")}
         />
       </Menu>
 
       <Menu
-        label="View"
+        label={t("menu.view")}
         menuKey="view"
         open={open}
         setOpen={setOpen}
         onHover={openOnHover}
       >
-        {VIEWS.map(({ key, label }) => (
+        {VIEWS.map(({ key, labelKey }) => (
           <Item
             key={key}
-            label={label}
+            label={t(labelKey)}
             checked={c.view === key}
             disabled={!c.setView}
             onSelect={() => c.setView?.(key)}
@@ -203,39 +205,39 @@ function AppMenus({
         ))}
         <Sep />
         <Item
-          label="Toggle page list"
+          label={t("menu.togglePageList")}
           shortcut={formatShortcut(MOD, "\\")}
           disabled={!c.toggleLeftPanel}
           onSelect={c.toggleLeftPanel}
         />
         <Item
-          label="Toggle settings panel"
+          label={t("menu.toggleSettingsPanel")}
           shortcut={formatShortcut(MOD, SHIFT_KEY, "\\")}
           disabled={!c.toggleRightPanel}
           onSelect={c.toggleRightPanel}
         />
         <Sep />
         <Item
-          label="Zoom in"
+          label={t("menu.zoomIn")}
           shortcut={formatShortcut(MOD, "+")}
           disabled={!c.canZoom}
           onSelect={() => zoom("in")}
         />
         <Item
-          label="Zoom out"
+          label={t("menu.zoomOut")}
           shortcut={formatShortcut(MOD, "-")}
           disabled={!c.canZoom}
           onSelect={() => zoom("out")}
         />
         <Item
-          label="Reset zoom"
+          label={t("menu.resetZoom")}
           shortcut={formatShortcut(MOD, "0")}
           disabled={!c.canZoom}
           onSelect={() => zoom("reset")}
         />
         <Sep />
         <Item
-          label="Fullscreen"
+          label={t("menu.fullscreen")}
           shortcut="F11"
           checked={fullscreen}
           onSelect={onToggleFullscreen}
@@ -245,10 +247,12 @@ function AppMenus({
   );
 }
 
-const VIEWS: { key: "pdf" | "split" | "edit"; label: string }[] = [
-  { key: "pdf", label: "PDF only" },
-  { key: "split", label: "Side by side" },
-  { key: "edit", label: "Extracted text" },
+/** Labels are catalogue keys, resolved at render: a module constant is
+    evaluated once, and would freeze whichever language was active then. */
+const VIEWS: { key: "pdf" | "split" | "edit"; labelKey: string }[] = [
+  { key: "pdf", labelKey: "viewMode.pdfPreview" },
+  { key: "split", labelKey: "viewMode.sideBySide" },
+  { key: "edit", labelKey: "viewMode.extractedText" },
 ];
 
 function Menu({
@@ -385,18 +389,19 @@ function useEditActions() {
 }
 
 function WindowControls({ maximized }: { maximized: boolean }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-0.5">
-      <ControlButton label="Minimise" onClick={() => win("minimize")}>
+      <ControlButton label={t("window.minimise")} onClick={() => win("minimize")}>
         <Minus size={16} strokeWidth={2.6} />
       </ControlButton>
       <ControlButton
-        label={maximized ? "Restore" : "Maximise"}
+        label={t(maximized ? "window.restore" : "window.maximise")}
         onClick={() => win("toggleMaximize")}
       >
         <Square size={12.5} strokeWidth={2.8} />
       </ControlButton>
-      <ControlButton label="Close" onClick={() => win("close")}>
+      <ControlButton label={t("window.close")} onClick={() => win("close")}>
         <X size={16} strokeWidth={2.6} />
       </ControlButton>
     </div>

@@ -1,6 +1,7 @@
+import { useTranslation } from "react-i18next";
 import { Clock, MoreHorizontal } from "lucide-react";
 import type { ProjectSummary } from "@/lib/api";
-import { relativeTime } from "@/lib/time";
+import { useRelativeTime } from "@/lib/use-relative-time";
 import { Card } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -13,6 +14,8 @@ export function ProjectCard({
   project: ProjectSummary;
   onOpen?: () => void;
 }) {
+  const { t } = useTranslation();
+  const since = useRelativeTime();
   const pct = Math.round((project.pagesReviewed / project.pageCount) * 100);
 
   return (
@@ -30,7 +33,7 @@ export function ProjectCard({
           <button
             onClick={(e) => e.stopPropagation()}
             className="-mt-0.5 cursor-pointer rounded p-1 text-ink-3"
-            aria-label="More options"
+            aria-label={t("projectCard.moreOptions")}
           >
             <MoreHorizontal size={16} />
           </button>
@@ -40,7 +43,10 @@ export function ProjectCard({
           <div className="mb-3 flex items-center justify-between text-xs text-ink-2">
             <StatusPill status={project.status} size="sm" />
             <span className="font-mono text-ink-3">
-              {project.pagesReviewed}/{project.pageCount} pp
+              {t("projectCard.pages", {
+                reviewed: project.pagesReviewed,
+                total: project.pageCount,
+              })}
             </span>
           </div>
           <ProgressBar
@@ -51,7 +57,7 @@ export function ProjectCard({
           <div className="mt-2 flex justify-between text-[11.5px] text-ink-3">
             <span className="flex items-center gap-1">
               <Clock size={11} strokeWidth={1.8} />
-              {relativeTime(project.updatedAt)}
+              {since(project.updatedAt)}
             </span>
             <span className="font-mono">{pct}%</span>
           </div>

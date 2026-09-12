@@ -2,17 +2,23 @@ export type LanguageCode = "en" | "am" | "ti" | "om";
 
 export interface Language {
   code: LanguageCode;
-  label: string;
 }
 
-/** The four supported languages. This is the single source of spelling. */
+/** The four supported languages. This is the single source of the code list. */
 export const LANGUAGES: Language[] = [
-  { code: "en", label: "English" },
-  { code: "am", label: "Amharic" },
-  { code: "ti", label: "Tigrigna" },
-  { code: "om", label: "Oromo" },
+  { code: "en" },
+  { code: "am" },
+  { code: "ti" },
+  { code: "om" },
 ];
 
-export function labelForCode(code: string): string {
-  return LANGUAGES.find((l) => l.code === code)?.label ?? code;
+/**
+ * Catalogue key for a textbook language's display name.
+ *
+ * These names are shown in the app's current interface language, so they live
+ * in the catalogue rather than here — unlike the interface-language list in
+ * ./app-language, whose labels stay in their own script on purpose.
+ */
+export function languageLabelKey(code: string): string {
+  return `contentLanguage.${code}`;
 }

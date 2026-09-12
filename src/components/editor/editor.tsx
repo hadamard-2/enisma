@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen,
@@ -94,6 +95,7 @@ function Editor({
   project: ProjectDetail;
   onBack: () => void;
 }) {
+  const { t } = useTranslation();
   const [pages, setPages] = useState<PageMeta[]>(project.pages);
   const [activePage, setActivePage] = useState(
     project.pages.find((p) => !p.done)?.pageNo ?? 1,
@@ -488,7 +490,7 @@ function Editor({
           onChange={(e) => setTitle(e.target.value)}
           onBlur={(e) => updateProject(project.id, { title: e.target.value }).catch(console.error)}
           title={title}
-          aria-label="Book title"
+          aria-label={t("editor.bookTitle")}
           style={{ left: leftCollapsed ? TITLE_LEFT_COLLAPSED : leftWidth + TITLE_GAP }}
           className="absolute top-3 z-20 h-8 w-66 truncate rounded-md border border-transparent bg-transparent px-2 font-serif text-[15px] font-medium text-ink outline-none! hover:border-line focus:border-line focus:bg-surface focus:text-clip"
         />
@@ -595,8 +597,20 @@ function FloatingPanelToggle({
   collapsed: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   const Icon = side === "left" ? PanelLeft : PanelRight;
-  const label = `${collapsed ? "Show" : "Hide"} ${side} panel`;
+  // Four whole strings rather than "Show"/"Hide" + side + "panel": the
+  // fragments were assembled in English word order, which no translator can
+  // rearrange once the sentence has already been built here.
+  const label = t(
+    side === "left"
+      ? collapsed
+        ? "editor.showLeftPanel"
+        : "editor.hideLeftPanel"
+      : collapsed
+        ? "editor.showRightPanel"
+        : "editor.hideRightPanel",
+  );
   const shortcut =
     side === "left"
       ? formatShortcut(MOD, "\\")
@@ -605,7 +619,7 @@ function FloatingPanelToggle({
     <button
       onClick={onClick}
       aria-label={label}
-      title={`${label} (${shortcut})`}
+      title={t("editor.panelToggleTooltip", { label, shortcut })}
       className={cn(
         "absolute top-3 z-20 grid size-8 cursor-pointer place-items-center rounded-md transition-all hover:text-ink",
         side === "left" ? "left-3" : "right-3",
@@ -619,10 +633,12 @@ function FloatingPanelToggle({
   );
 }
 
-const VIEW_ITEMS: { key: View; label: string; Icon: typeof FileText }[] = [
-  { key: "pdf", label: "PDF preview", Icon: FileText },
-  { key: "split", label: "Side by side", Icon: BookOpen },
-  { key: "edit", label: "Extracted text", Icon: Pencil },
+/** Labels are catalogue keys, resolved at render — a module constant would
+    freeze whichever language happened to be active at import time. */
+const VIEW_ITEMS: { key: View; labelKey: string; Icon: typeof FileText }[] = [
+  { key: "pdf", labelKey: "viewMode.pdfPreview", Icon: FileText },
+  { key: "split", labelKey: "viewMode.sideBySide", Icon: BookOpen },
+  { key: "edit", labelKey: "viewMode.extractedText", Icon: Pencil },
 ];
 
 function FloatingViewToggle({
@@ -632,16 +648,17 @@ function FloatingViewToggle({
   view: View;
   setView: (v: View) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="absolute top-3 right-13 z-20 flex gap-0.5 rounded-md border border-line bg-surface p-0.5 shadow-paper-sm">
-      {VIEW_ITEMS.map(({ key, label, Icon }) => {
+      {VIEW_ITEMS.map(({ key, labelKey, Icon }) => {
         const active = view === key;
         return (
           <button
             key={key}
             onClick={() => setView(key)}
-            aria-label={label}
-            title={label}
+            aria-label={t(labelKey)}
+            title={t(labelKey)}
             className={cn(
               "grid size-7 cursor-pointer place-items-center rounded-sm transition-colors",
               active
@@ -671,6 +688,7 @@ function FloatingPagePill({
   /** Jump straight to a page number, ignoring the page list's filter. */
   onGoto: (page: number) => void;
 }) {
+  const { t } = useTranslation();
   // What's in the box while it's being typed into; resynced to `page` whenever
   // the page changes underneath (arrows, page list, keyboard).
   const [draft, setDraft] = useState(String(page));
@@ -690,8 +708,8 @@ function FloatingPagePill({
     <div className="absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-line bg-surface p-0.5 shadow-paper-sm">
       <button
         onClick={onPrev}
-        aria-label="Previous page (↑)"
-        title="Previous page (↑)"
+        aria-label={t("editor.previousPage")}
+        title={t("editor.previousPage")}
         className="grid size-7 cursor-pointer place-items-center rounded-sm text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
       >
         <ChevronUp size={15} strokeWidth={1.7} />
@@ -710,8 +728,8 @@ function FloatingPagePill({
               e.currentTarget.blur();
             }
           }}
-          aria-label="Go to page"
-          title="Go to page"
+          aria-label={t("editor.goToPage")}
+          title={t("editor.goToPage")}
           className="rounded-sm bg-transparent text-center font-medium text-ink outline-none! hover:bg-paper-2 focus:bg-paper-2"
           style={{ width: `${String(totalPages).length + 1}ch` }}
         />
@@ -720,8 +738,8 @@ function FloatingPagePill({
 
       <button
         onClick={onNext}
-        aria-label="Next page (↓)"
-        title="Next page (↓)"
+        aria-label={t("editor.nextPage")}
+        title={t("editor.nextPage")}
         className="grid size-7 cursor-pointer place-items-center rounded-sm text-ink-3 transition-colors hover:bg-paper-2 hover:text-ink"
       >
         <ChevronDown size={15} strokeWidth={1.7} />

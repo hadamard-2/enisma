@@ -11,10 +11,11 @@ import {
   Settings,
   Upload,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listProjects, type ProjectSummary } from "@/lib/api";
-import { relativeTime } from "@/lib/time";
+import { useRelativeTime } from "@/lib/use-relative-time";
 import { useRegisterCommands } from "@/lib/app-commands";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,8 @@ import { SettingsDialog } from "@/components/settings/settings-dialog";
 type Filter = "All" | "Recent" | "In progress" | "Completed";
 
 export function Home() {
+  const { t } = useTranslation();
+  const since = useRelativeTime();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("All");
   const [query, setQuery] = useState("");
@@ -67,28 +70,28 @@ export function Home() {
 
   const navItems = useMemo(
     () => [
-      { label: "All projects", key: "All" as const, icon: Layers, count: projects.length },
+      { label: t("nav.allProjects"), key: "All" as const, icon: Layers, count: projects.length },
       {
-        label: "Recent",
+        label: t("nav.recent"),
         key: "Recent" as const,
         icon: Clock,
         count: projects.filter((p) => Date.now() - new Date(p.updatedAt).getTime() < 86_400_000)
           .length,
       },
       {
-        label: "In progress",
+        label: t("nav.inProgress"),
         key: "In progress" as const,
         icon: FileText,
         count: projects.filter((p) => p.status === "in-progress").length,
       },
       {
-        label: "Completed",
+        label: t("nav.completed"),
         key: "Completed" as const,
         icon: Check,
         count: projects.filter((p) => p.status === "done").length,
       },
     ],
-    [projects],
+    [projects, t],
   );
 
   const filtered = useMemo(() => {
@@ -121,17 +124,17 @@ export function Home() {
             <AudioLines size={16} />
           </span>
           <span className="font-sans text-lg font-medium tracking-tight text-ink">
-            Enisma
+            {t("app.name")}
           </span>
         </div>
 
         <Button size="lg" className="mb-4 w-full" onClick={pickFile}>
           <Plus />
-          New project
+          {t("nav.newProject")}
         </Button>
 
         <div className="mb-1 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-ink-3">
-          Library
+          {t("nav.library")}
         </div>
 
         {navItems.map((it) => {
@@ -166,7 +169,7 @@ export function Home() {
           className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13.5px] text-ink-2 transition-colors hover:bg-surface hover:text-ink"
         >
           <Settings size={15} strokeWidth={1.6} className="text-ink-3" />
-          <span className="flex-1">Settings</span>
+          <span className="flex-1">{t("nav.settings")}</span>
         </button>
       </aside>
 
@@ -175,11 +178,15 @@ export function Home() {
         <div className="mb-2 flex items-end justify-between">
           <div>
             <h1 className="m-0 font-serif text-3xl font-medium tracking-tight text-ink">
-              Your audiobook projects
+              {t("library.heading")}
             </h1>
             <p className="mt-1.5 text-sm text-ink-3">
-              {filtered.length} {filtered.length === 1 ? "project" : "projects"}
-              {projects[0] ? ` · last activity ${relativeTime(projects[0].updatedAt)}` : ""}
+              {projects[0]
+                ? t("library.subtitleWithActivity", {
+                    count: filtered.length,
+                    time: since(projects[0].updatedAt),
+                  })
+                : t("library.subtitle", { count: filtered.length })}
             </p>
           </div>
 
@@ -190,7 +197,7 @@ export function Home() {
                 className="absolute top-1/2 left-3 -translate-y-1/2 z-10 text-muted-foreground"
               />
               <Input
-                placeholder="Search textbooks…"
+                placeholder={t("library.search")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="bg-surface pl-8"
@@ -200,26 +207,26 @@ export function Home() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="lg" className="bg-surface">
                   <ListFilter />
-                  View
+                  {t("library.view")}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("library.sortBy")}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={sortBy}
                   onValueChange={(v) => setSortBy(v as typeof sortBy)}
                 >
-                  <DropdownMenuRadioItem value="recent">Most recent</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="recent">{t("library.sortRecent")}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="title">{t("library.sortTitle")}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="progress">{t("library.sortProgress")}</DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel>Show</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("library.show")}</DropdownMenuLabel>
                 <DropdownMenuCheckboxItem
                   checked={showCompleted}
                   onCheckedChange={setShowCompleted}
                 >
-                  Completed projects
+                  {t("library.showCompleted")}
                 </DropdownMenuCheckboxItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -257,6 +264,7 @@ export function Home() {
 }
 
 function NewProjectTile({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation();
   return (
     <button
       onClick={onClick}
@@ -267,10 +275,10 @@ function NewProjectTile({ onClick }: { onClick: () => void }) {
       </div>
       <div>
         <div className="mb-1.5 font-serif text-[17px] font-medium text-ink">
-          Start a new project
+          {t("library.newTileTitle")}
         </div>
         <div className="text-[12.5px] leading-relaxed text-ink-3">
-          Import a textbook from disk.
+          {t("library.newTileBody")}
         </div>
       </div>
     </button>

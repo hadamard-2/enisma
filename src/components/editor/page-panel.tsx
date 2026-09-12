@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import type { PageMeta } from "@/lib/api";
@@ -24,6 +25,7 @@ export function PagePanel({
   setActive: (n: number) => void;
   counts: Counts;
 }) {
+  const { t } = useTranslation();
   const visible =
     filter === "all"
       ? pages
@@ -31,8 +33,8 @@ export function PagePanel({
   const pct = Math.round((counts.doneCount / pages.length) * 100);
 
   const legend: { label: string; n: number; key: "done" | "not-done"; dot: string }[] = [
-    { label: "Done", n: counts.doneCount, key: "done", dot: "bg-teal" },
-    { label: "Not done", n: counts.notDoneCount, key: "not-done", dot: "bg-amber" },
+    { label: t("pagePanel.done"), n: counts.doneCount, key: "done", dot: "bg-teal" },
+    { label: t("pagePanel.notDone"), n: counts.notDoneCount, key: "not-done", dot: "bg-amber" },
   ];
 
   return (
@@ -99,6 +101,7 @@ function PageRow({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       onClick={onClick}
@@ -135,7 +138,7 @@ function PageRow({
           page.done ? "text-teal-ink" : "text-amber-ink",
         )}
       >
-        p. {page.pageNo}
+        {t("pagePanel.pageAbbrev", { n: page.pageNo })}
       </span>
     </button>
   );

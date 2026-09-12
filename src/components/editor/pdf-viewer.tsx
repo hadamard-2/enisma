@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ZOOM_EVENT, type ZoomCommand } from "@/lib/app-commands";
 import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
@@ -48,6 +49,7 @@ const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
  * carrying pdf.js's text layer so the page's own text can be selected.
  */
 export function PdfViewer({ url, page }: { url: string; page: number }) {
+  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasHolder = useRef<HTMLDivElement | null>(null);
   const textHolder = useRef<HTMLDivElement | null>(null);
@@ -297,7 +299,7 @@ export function PdfViewer({ url, page }: { url: string; page: number }) {
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-paper-2 shadow-paper-sm">
       <div ref={scrollRef} className="scroll-inset min-h-0 flex-1 overflow-auto">
         {error ? (
-          <div className="p-6 text-[12.5px] text-amber-ink">Could not render this PDF: {error}</div>
+          <div className="p-6 text-[12.5px] text-amber-ink">{t("pdf.renderError", { error })}</div>
         ) : (
           // w-max/min-w-full and min-h-full: at least the viewport's size, so
           // a small page centres in it, and grows with a large one so it
@@ -327,7 +329,7 @@ export function PdfViewer({ url, page }: { url: string; page: number }) {
       {zoom !== 1 && (
         <button
           onClick={() => zoomBy(1 / zoom)}
-          title={`Reset zoom (${formatShortcut(MOD, "0")})`}
+          title={t("pdf.resetZoom", { shortcut: formatShortcut(MOD, "0") })}
           className="absolute bottom-3 left-3 cursor-pointer rounded-md bg-ink/75 px-2 py-0.5 font-mono text-[10.5px] text-paper transition-colors hover:bg-ink"
         >
           {Math.round(zoom * 100)}%

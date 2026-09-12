@@ -3,6 +3,9 @@
 import "@fontsource-variable/google-sans-flex/opsz.css";
 import "@fontsource-variable/noto-sans-ethiopic/wght.css";
 
+// Side-effect import: initialises i18next before any component renders.
+import "@/lib/i18n";
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

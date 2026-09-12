@@ -1,4 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,7 @@ export function CenterPanel({
   done: boolean;
   onToggleDone: () => void;
 }) {
+  const { t } = useTranslation();
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   const seconds = Math.round(text.length / 14);
   const split = useDefaultLayout({
@@ -64,13 +66,13 @@ export function CenterPanel({
           // Showing an editable box here would invite typing that cannot
           // be attributed to a page, and so cannot be saved.
           <div className="min-h-0 flex-1 px-1 text-[12.5px] text-amber-ink">
-            Could not load the text for page {page}: {loadError}
+            {t("center.loadError", { page, error: loadError })}
           </div>
         ) : (
           <>
             {text === "" && (
               <div className="pointer-events-none absolute px-1 font-serif text-base text-ink-3 italic">
-                No extracted text yet — type here, or wait for extraction.
+                {t("center.emptyText")}
               </div>
             )}
             <textarea
@@ -83,13 +85,13 @@ export function CenterPanel({
         )}
         <div className="mt-2.5 flex justify-between border-t border-dashed border-line pt-2.5 text-[11px] text-ink-3">
           <span>
-            {wordCount} words · ~{seconds}s spoken
+            {t("center.stats", { words: wordCount, seconds })}
             {/* Only ever shown when something is off: "saved" is the normal
                 state and doesn't need saying. */}
             {(loadError || !saved) && (
               <span className="text-amber-ink">
                 {" · "}
-                {loadError ? "not loaded" : "unsaved changes"}
+                {t(loadError ? "center.notLoaded" : "center.unsavedChanges")}
               </span>
             )}
           </span>
@@ -97,14 +99,14 @@ export function CenterPanel({
             {/* The hints are the expendable half of this row: they go once the
                 pane is too narrow to hold them beside the button. */}
             <span className="inline-flex items-center gap-2.5 @max-[510px]:hidden">
-              <Kbd>{formatShortcut(MOD, "Z")}</Kbd> Undo
-              <Kbd>{formatShortcut(MOD, SHIFT_KEY, "Z")}</Kbd> Redo
-              <Kbd>{formatShortcut(MOD, "S")}</Kbd> Save
+              <Kbd>{formatShortcut(MOD, "Z")}</Kbd> {t("center.undoHint")}
+              <Kbd>{formatShortcut(MOD, SHIFT_KEY, "Z")}</Kbd> {t("center.redoHint")}
+              <Kbd>{formatShortcut(MOD, "S")}</Kbd> {t("center.saveHint")}
             </span>
             <button
               onClick={onToggleDone}
               aria-pressed={done}
-              title={done ? "Page is done — click to reopen" : "Mark this page done"}
+              title={t(done ? "center.pageDoneTooltipOn" : "center.pageDoneTooltipOff")}
               className={cn(
                 "ml-1 inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 font-medium transition-colors",
                 done
@@ -113,7 +115,7 @@ export function CenterPanel({
               )}
             >
               <Check size={12} strokeWidth={2.2} />
-              Page done
+              {t("center.pageDone")}
             </button>
           </span>
         </div>

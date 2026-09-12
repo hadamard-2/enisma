@@ -1,5 +1,6 @@
+import { useTranslation } from "react-i18next";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
-import { APP_LANGUAGES, useAppLanguage } from "@/lib/app-language";
+import { APP_LANGUAGES, appLanguageLabelKey, useAppLanguage } from "@/lib/app-language";
 import { useTheme, type ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import {
@@ -16,10 +17,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const THEMES: { key: ThemePreference; label: string; icon: typeof Sun; hint: string }[] = [
-  { key: "light", label: "Light", icon: Sun, hint: "Always the light palette" },
-  { key: "dark", label: "Dark", icon: Moon, hint: "Always the dark palette" },
-  { key: "system", label: "System", icon: Monitor, hint: "Follow the desktop" },
+const THEMES: { key: ThemePreference; labelKey: string; icon: typeof Sun; hintKey: string }[] = [
+  { key: "light", labelKey: "settings.themeLight", icon: Sun, hintKey: "settings.themeLightHint" },
+  { key: "dark", labelKey: "settings.themeDark", icon: Moon, hintKey: "settings.themeDarkHint" },
+  { key: "system", labelKey: "settings.themeSystem", icon: Monitor, hintKey: "settings.themeSystemHint" },
 ];
 
 export function SettingsDialog({
@@ -29,6 +30,7 @@ export function SettingsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const { preference, setPreference } = useTheme();
   const [language, setLanguage] = useAppLanguage();
 
@@ -36,13 +38,13 @@ export function SettingsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="grid-cols-1 sm:max-w-160">
         <DialogHeader>
-          <DialogTitle className="font-serif text-xl">Settings</DialogTitle>
+          <DialogTitle className="font-serif text-xl">{t("settings.title")}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-7 py-3">
-          <Section title="Appearance">
+          <Section title={t("settings.appearance")}>
             <div className="grid grid-cols-3 gap-2.5">
-              {THEMES.map(({ key, label, icon: Icon, hint }) => {
+              {THEMES.map(({ key, labelKey, icon: Icon, hintKey }) => {
                 const active = preference === key;
                 return (
                   <button
@@ -58,19 +60,19 @@ export function SettingsDialog({
                   >
                     <span className="flex w-full items-center gap-2">
                       <Icon size={15} strokeWidth={1.8} />
-                      <span className="flex-1 text-[13.5px] font-medium">{label}</span>
+                      <span className="flex-1 text-[13.5px] font-medium">{t(labelKey)}</span>
                       {active && (
                         <Check size={14} strokeWidth={2.4} className="text-teal-ink" />
                       )}
                     </span>
-                    <span className="text-[11.5px] text-ink-3">{hint}</span>
+                    <span className="text-[11.5px] text-ink-3">{t(hintKey)}</span>
                   </button>
                 );
               })}
             </div>
           </Section>
 
-          <Section title="Language">
+          <Section title={t("settings.language")}>
             <Select
               value={language}
               onValueChange={(v) => setLanguage(v as typeof language)}
@@ -90,9 +92,9 @@ export function SettingsDialog({
                     className="[&>span:last-child]:min-w-0"
                   >
                     <span className="truncate">
-                      {l.label}
+                      {t(appLanguageLabelKey(l.code))}
                       {!l.translated && (
-                        <span className="text-ink-3"> · not translated yet</span>
+                        <span className="text-ink-3">{t("settings.notTranslated")}</span>
                       )}
                     </span>
                   </SelectItem>
