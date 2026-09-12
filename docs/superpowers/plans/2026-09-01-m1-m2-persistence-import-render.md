@@ -1206,8 +1206,8 @@ describe("languages", () => {
     expect(LANGUAGES.map((l) => l.code)).toEqual(["en", "am", "ti", "om"]);
   });
 
-  it("uses the Tigrinya spelling", () => {
-    expect(labelForCode("ti")).toBe("Tigrinya");
+  it("uses the Tigrigna spelling", () => {
+    expect(labelForCode("ti")).toBe("Tigrigna");
   });
 
   it("falls back to the raw code when unknown", () => {
@@ -1237,7 +1237,7 @@ export interface Language {
 export const LANGUAGES: Language[] = [
   { code: "en", label: "English" },
   { code: "am", label: "Amharic" },
-  { code: "ti", label: "Tigrinya" },
+  { code: "ti", label: "Tigrigna" },
   { code: "om", label: "Oromo" },
 ];
 

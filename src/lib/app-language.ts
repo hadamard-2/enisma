@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 export const APP_LANGUAGES = [
   { code: "en", label: "English", translated: true },
   { code: "am", label: "አማርኛ · Amharic", translated: false },
-  { code: "ti", label: "ትግርኛ · Tigrinya", translated: false },
+  { code: "ti", label: "ትግርኛ · Tigrigna", translated: false },
   { code: "om", label: "Afaan Oromoo · Oromo", translated: false },
 ] as const;
 

@@ -4,7 +4,7 @@
 
 A desktop app for turning printed textbooks into audiobooks. Import a scanned textbook PDF, review and correct the extracted text page by page, pick a text-to-speech voice, and export an audiobook.
 
-Enisma is aimed at making educational material more accessible — its sample content is drawn from Ethiopian school textbooks across English, Amharic, Tigrinya, and Oromo.
+Enisma is aimed at making educational material more accessible — its sample content is drawn from Ethiopian school textbooks across English, Amharic, Tigrigna, and Oromo.
 
 Enisma is designed to run **fully offline**. Apart from a one-time model download on first launch, the entire pipeline — OCR, text-to-speech, and export — runs on-device with no network connection required, and your textbooks never leave your machine.
 

@@ -9,7 +9,7 @@ export interface Language {
 export const LANGUAGES: Language[] = [
   { code: "en", label: "English" },
   { code: "am", label: "Amharic" },
-  { code: "ti", label: "Tigrinya" },
+  { code: "ti", label: "Tigrigna" },
   { code: "om", label: "Oromo" },
 ];
 

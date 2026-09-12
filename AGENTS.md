@@ -4,7 +4,7 @@ Guidance for working in this repository.
 
 ## What this is
 
-A Tauri 2 + React 19 desktop app for turning scanned printed textbooks into audiobooks: import a PDF, OCR the pages, correct the extracted text page by page, pick a TTS voice, and export an audiobook. Sample content is Ethiopian school textbooks (English, Amharic, Tigrinya, Oromo).
+A Tauri 2 + React 19 desktop app for turning scanned printed textbooks into audiobooks: import a PDF, OCR the pages, correct the extracted text page by page, pick a TTS voice, and export an audiobook. Sample content is Ethiopian school textbooks (English, Amharic, Tigrigna, Oromo).
 
 ## Two names: HearBook vs Enisma
 

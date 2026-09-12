@@ -5,7 +5,7 @@
 ## Goals & non-negotiables
 
 - **Fully offline, on-device.** Apart from a one-time model download on first launch, the entire pipeline (extraction, TTS, export) runs locally with no network. User textbooks never leave the machine. No cloud OCR or hosted TTS — ever.
-- **Languages:** English, Amharic, Tigrinya, Afaan Oromo.
+- **Languages:** English, Amharic, Tigrigna, Afaan Oromo.
 - **Replace, don't rebuild.** The UI, routing, keyboard model, and panel layout stay as-is. We swap mock data for real data behind the existing components.
 
 ## Architecture
@@ -31,7 +31,7 @@ React (Tauri webview)  ──invoke──▶  Rust / Tauri core  ──loopback 
 | Audiobook export format | **MP3** (single concatenated file) | Universally playable, modest bundle. (M4B-with-chapters was considered; deferred to keep the bundle lean.) |
 | PDF on-screen rendering | **pdf.js (`pdfjs-dist`)** in the webview | Interactive, offline, well-trodden. docling owns text; pdf.js owns pixels — clean split. *(My call, open to review.)* |
 | Project storage | **Rust-owned SQLite (`rusqlite`)** + typed Tauri commands; binaries on disk | Transactional logic stays in Rust, not in frontend SQL. |
-| OCR scope (v0) | **No Ge'ez OCR.** Text-layer-first everywhere; EasyOCR fallback for Latin-script projects only (English/Oromo); Amharic/Tigrinya are text-layer-only | Textbooks almost always ship a text layer, so OCR is a rare fallback. Ge'ez OCR is high-effort / low-ROI and is deferred — this also removes Tesseract and its cross-platform bundling risk from v0 entirely. |
+| OCR scope (v0) | **No Ge'ez OCR.** Text-layer-first everywhere; EasyOCR fallback for Latin-script projects only (English/Oromo); Amharic/Tigrigna are text-layer-only | Textbooks almost always ship a text layer, so OCR is a rare fallback. Ge'ez OCR is high-effort / low-ROI and is deferred — this also removes Tesseract and its cross-platform bundling risk from v0 entirely. |
 | Pitch control | **Dropped** | Neither Kokoro nor MMS/VITS exposes pitch natively; we won't fake it. Rate maps to each engine's speed. The pitch slider is removed from the UI. |
 | Model delivery | **Download on first launch** from **our own hosted copies** (HuggingFace model repo or a GitHub release), via a manifest-driven download handler with checksums + resume | Matches the "install, then download models" framing; keeps the installer thin; hosting our own copies makes the offline-critical download reliable instead of dependent on shifting upstream URLs. |
 
@@ -70,7 +70,7 @@ Rust spawns the sidecar at startup, reads the `port`/`ready` handshake from stdo
 - **Text-layer-first.** Most textbooks ship an embedded text layer, so OCR is the exception, not the rule. docling uses the text layer where present and only reaches for OCR on pages/regions that lack one.
 - **OCR scope in v0, by script:**
   - **Latin (English, Afaan Oromo):** `do_ocr=True` with **EasyOCR** (docling's default engine) as the fallback for any page missing a text layer.
-  - **Ge'ez (Amharic, Tigrinya):** **no OCR** — `do_ocr=False`, text-layer only. EasyOCR has no Amharic model and Tesseract Ge'ez is unreliable, so Ge'ez OCR is deferred past v0 (high effort, low ROI). OCR enablement is therefore decided per project by its language.
+  - **Ge'ez (Amharic, Tigrigna):** **no OCR** — `do_ocr=False`, text-layer only. EasyOCR has no Amharic model and Tesseract Ge'ez is unreliable, so Ge'ez OCR is deferred past v0 (high effort, low ROI). OCR enablement is therefore decided per project by its language.
 - **Picking the Latin OCR engine is a dev-time call, not a UI toggle.** We default to EasyOCR and, if it underperforms on real textbook pages during dogfooding, swap it (e.g. RapidOCR) — there is no user-facing OCR-engine switch.
 - **Offline:** prefetch with `docling-tools models download` (or `docling.utils.model_downloader.download_models()`); point `artifacts_path` / `DOCLING_ARTIFACTS_PATH` at the app-data model dir.
 - Per-page text streams back over SSE and is persisted as `pages.source_text`; user edits become `pages.edited_text`. This feeds the editor's existing text panel and the live word-count / duration estimate.
@@ -83,7 +83,7 @@ Language → engine matrix:
 | --- | --- | --- | --- |
 | English | Kokoro (`kokoro-onnx`) | **Multiple** (`get_voices()`, default e.g. `af_heart`) | 24 kHz. The settings-panel voice dropdown is real here. Needs a G2P step — see below. |
 | Amharic | MMS-TTS (`sherpa-onnx` VITS) | Single-speaker | 16 kHz. **`uroman(amh)` romanization** before synthesis (Ge'ez → Latin; MMS vocab is Latin-only). |
-| Tigrinya | MMS-TTS | Single-speaker | 16 kHz. `uroman(tir)`. |
+| Tigrigna | MMS-TTS | Single-speaker | 16 kHz. `uroman(tir)`. |
 | Afaan Oromo | MMS-TTS | Single-speaker | 16 kHz. `uroman(orm)` (Latin/Qubee → near-identity). |
 
 - **English phonemization (G2P) is its own step.** Kokoro synthesizes from *phonemes*, not text. `kokoro-onnx` (v1.0+) recommends **misaki** as the primary English G2P with **eSpeak-NG as misaki's fallback** for out-of-vocabulary words: run G2P in `tts_kokoro.py`, then call `kokoro.create(phonemes, voice, is_phonemes=True)`. So the English path must bundle misaki (+ its data) **and** eSpeak-NG (library + data) offline — not just the model/voices files. A lighter alternative is the built-in `Tokenizer().phonemize()` (eSpeak-NG only, no misaki) at some English-quality cost. (The MMS languages don't use this; they romanize via `uroman` instead.)
@@ -175,7 +175,7 @@ No new screens. Hook points into existing components:
 - [ ] **M0 — Sidecar harness.** Bundle the Python sidecar; Rust spawns/supervises it; `/health` handshake; remove the `greet` stub.
 - [ ] **M1 — Persistence + import.** SQLite schema + commands; wire Home to real projects; PDF import (dialog → copy → create project).
 - [ ] **M2 — PDF render.** pdf.js in the preview/side-by-side panels (real pages, not mock).
-- [ ] **M3 — Extraction.** docling `/extract` SSE; text-layer-first; EasyOCR fallback for Latin-script projects (English/Oromo), no OCR for Ge'ez (Amharic/Tigrinya); stream per-page text into the editor; offline `artifacts_path`.
+- [ ] **M3 — Extraction.** docling `/extract` SSE; text-layer-first; EasyOCR fallback for Latin-script projects (English/Oromo), no OCR for Ge'ez (Amharic/Tigrigna); stream per-page text into the editor; offline `artifacts_path`.
 - [ ] **M4 — TTS preview.** Kokoro (en) + MMS (am/ti/om) `/tts`; wire settings preview + per-page audio; real English voice list.
 - [ ] **M5 — Export.** Per-page synth caching + MP3 stitch/encode with progress.
 - [ ] **M6 — First-run download UX + packaging.** Model download flow; bundle-size and startup polish.
@@ -184,13 +184,13 @@ No new screens. Hook points into existing components:
 
 - **Pin every package/API against the actually-installed version** before coding (per project convention): `docling`, `kokoro-onnx` (vs the `kokoro` PyTorch package; note its API is `get_voices()` and `create(..., is_phonemes=True)`), `misaki` (English G2P) + `espeak-ng`, `sherpa-onnx`, `uroman`, and the MP3 encoder. Treat the names here as intent to verify, not gospel.
 - **Bundle size.** docling pulls CPU PyTorch; PyInstaller + ONNX Runtime + Torch makes a large sidecar. Acceptable for desktop, but plan installer/runtime size and consider what's bundled vs first-run-downloaded.
-- **TTS romanization quality.** Validate `uroman` output for Amharic/Tigrinya (Ge'ez) and the Latin handling for Oromo on real textbook text; this is the TTS area most likely to need iteration.
+- **TTS romanization quality.** Validate `uroman` output for Amharic/Tigrigna (Ge'ez) and the Latin handling for Oromo on real textbook text; this is the TTS area most likely to need iteration.
 - **English G2P / phonemizer bundling.** The Kokoro path needs a phonemizer bundled offline — recommended misaki + eSpeak-NG fallback (or the lighter built-in eSpeak-only tokenizer). Verify the exact misaki extras (`misaki[en]`, the heavier `trf=True` transformer variant vs `trf=False`) and that PyInstaller actually collects misaki's data files **and** the eSpeak-NG library + data. This is the English analogue of the `uroman` romanization risk, and adds to bundle size.
 - **Download robustness is itself a feature.** Large files over flaky networks is the failure mode that most hurts an offline-first app's first impression — it's why the download handler above is specced in detail rather than treated as a `curl`.
 - **Sample-rate mismatch** (Kokoro 24 kHz vs MMS 16 kHz) is avoided by single-language books, but the export/encode path should assert one rate per book.
-- **Deferred — Ge'ez OCR.** Out of v0 by decision. Only revisit (and take on the Tesseract cross-platform bundling cost) if text-layer-less Amharic/Tigrinya PDFs turn out to be common in practice.
+- **Deferred — Ge'ez OCR.** Out of v0 by decision. Only revisit (and take on the Tesseract cross-platform bundling cost) if text-layer-less Amharic/Tigrigna PDFs turn out to be common in practice.
 
 ## Out of scope (for now)
 
-- **Ge'ez-script OCR (Amharic/Tigrinya)** — text-layer-only in v0; no OCR fallback for these languages.
+- **Ge'ez-script OCR (Amharic/Tigrigna)** — text-layer-only in v0; no OCR fallback for these languages.
 - M4B/chapters, multi-language books, cloud sync, voice cloning.
