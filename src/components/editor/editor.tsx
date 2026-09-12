@@ -97,8 +97,11 @@ export function EditorRoute() {
         if (cancelled) return;
         await savePageSourceText(project.id, pageTexts);
         if (cancelled) return;
-        // Re-read the project so `pagesMissingText` drops to zero and the
-        // active page picks up its new text.
+        // Re-read the project so `pagesMissingText` drops to zero. `Editor`
+        // is keyed on `project.id`, so this only updates its props — it does
+        // NOT remount and does NOT by itself refresh the text on screen. The
+        // active page's load effect below is what does that, once its own
+        // dependency on `pagesMissingText` sees the drop.
         setProject(await getProject(project.id));
       } catch (e) {
         // A repair that fails leaves the pages as they were; the editor still
@@ -148,6 +151,15 @@ function Editor({
   // advance this ref — a fetch landing is the one event that actually
   // establishes "the text in state came from page N". Everything else reads it.
   const textPageRef = useRef<number | null>(null);
+  // Mirrors `text` for the load effect's async continuation below, which
+  // closes over whatever `text` was when the effect was set up. A repair
+  // that lands while the user keeps typing must compare against the LATEST
+  // keystroke, not the one at effect-setup time, so the continuation reads
+  // this ref instead of the closed-over `text`.
+  const textRef = useRef("");
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
   const [saved, setSaved] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>("split");
@@ -273,6 +285,14 @@ function Editor({
   //
   // `cancelled` (captured per effect run) still guards against a response for
   // a page we have since left overwriting whatever page is now active.
+  //
+  // Also depends on `project.pagesMissingText`: a self-repair (see
+  // `EditorRoute`) writes fresh source text straight into the database
+  // without remounting this component, so nothing else re-runs this effect
+  // when a repair affecting the active page completes. Without this
+  // dependency the "reading the text from this book" placeholder — shown
+  // because the page had no text yet — stays on screen forever, since
+  // `noTextLayer`/`text` never see the write.
   useEffect(() => {
     let cancelled = false;
     const load = writeChainRef.current
@@ -285,6 +305,21 @@ function Editor({
     load.then(
       (p) => {
         if (cancelled || p === null) return;
+        // A rerun triggered by the repair, while the page it is reloading is
+        // still the one on screen, must not clobber an edit the user typed
+        // during the ~1s extraction window: the debounce may not have
+        // flushed, so the fresh row can be stale relative to what's visible.
+        // `textRef` (not the closed-over `text`) is checked because this
+        // continuation can resolve well after the effect was set up, and the
+        // user may have kept typing in that gap. A genuine page navigation
+        // never hits this branch: `textPageRef.current` is still the OLD
+        // page here, not `activePage`.
+        if (
+          textPageRef.current === activePage &&
+          textRef.current !== savedTextRef.current
+        ) {
+          return;
+        }
         const value = p.editedText ?? p.sourceText ?? "";
         savedTextRef.current = value;
         textPageRef.current = activePage;
@@ -311,7 +346,7 @@ function Editor({
     return () => {
       cancelled = true;
     };
-  }, [project.id, activePage]);
+  }, [project.id, activePage, project.pagesMissingText]);
 
   // Leaving a page (or the editor) sends whatever is still queued, addressed
   // to the page it was typed on. This is what stops the single pending slot
