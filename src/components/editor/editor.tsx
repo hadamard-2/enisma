@@ -39,6 +39,11 @@ const VIEW_ORDER: View[] = ["pdf", "split", "edit"];
 
 const SAVE_DEBOUNCE_MS = 500;
 
+/** Clear of the panel toggle (left-3, size-8) when the page list is shut. */
+const TITLE_LEFT_COLLAPSED = 52;
+/** Breathing room between the page list's edge and the title, in px. */
+const TITLE_GAP = 12;
+
 /**
  * One queued page-text write. The project and page travel WITH the text, so a
  * write dispatched later — after the user has already paged away — still lands
@@ -377,6 +382,8 @@ function Editor({
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
+  /** Left panel width in px, so the title can sit just past its edge. */
+  const [leftWidth, setLeftWidth] = useState(0);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
   const layout = useDefaultLayout({
@@ -471,14 +478,19 @@ function Editor({
           onClick={toggleLeft}
         />
         {/* Fixed width: ellipsised at rest, and the input's own horizontal
-            scroll takes over while it's focused for editing. */}
+            scroll takes over while it's focused for editing.
+
+            It follows the page list: tucked in beside the toggle while that
+            panel is collapsed, and stepped over to the panel's right edge
+            once it opens, so it never straddles the two. */}
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={(e) => updateProject(project.id, { title: e.target.value }).catch(console.error)}
           title={title}
           aria-label="Book title"
-          className="absolute top-3 left-13 z-20 h-8 w-66 truncate rounded-md border border-transparent bg-transparent px-2 font-serif text-[15px] font-medium text-ink outline-none! hover:border-line focus:border-line focus:bg-surface focus:text-clip"
+          style={{ left: leftCollapsed ? TITLE_LEFT_COLLAPSED : leftWidth + TITLE_GAP }}
+          className="absolute top-3 z-20 h-8 w-66 truncate rounded-md border border-transparent bg-transparent px-2 font-serif text-[15px] font-medium text-ink outline-none! hover:border-line focus:border-line focus:bg-surface focus:text-clip"
         />
         <FloatingViewToggle view={view} setView={setView} />
         <FloatingPanelToggle
@@ -501,7 +513,10 @@ function Editor({
             maxSize="30%"
             collapsible
             collapsedSize={0}
-            onResize={(s) => setLeftCollapsed(s.asPercentage === 0)}
+            onResize={(s) => {
+              setLeftCollapsed(s.asPercentage === 0);
+              setLeftWidth(s.inPixels);
+            }}
           >
             <PagePanel
               pages={pages}

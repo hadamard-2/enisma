@@ -80,11 +80,21 @@ export function SettingsDialog({
               </SelectTrigger>
               <SelectContent>
                 {APP_LANGUAGES.map((l) => (
-                  <SelectItem key={l.code} value={l.code}>
-                    {l.label}
-                    {!l.translated && (
-                      <span className="text-ink-3"> · not translated yet</span>
-                    )}
+                  // The option list is only as wide as the trigger, so the
+                  // longer "not translated yet" rows are ellipsised rather
+                  // than allowed to run onto a second line. One span keeps
+                  // the label and the note as a single truncatable run.
+                  <SelectItem
+                    key={l.code}
+                    value={l.code}
+                    className="[&>span:last-child]:min-w-0"
+                  >
+                    <span className="truncate">
+                      {l.label}
+                      {!l.translated && (
+                        <span className="text-ink-3"> · not translated yet</span>
+                      )}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>

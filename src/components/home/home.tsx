@@ -6,18 +6,15 @@ import {
   FileText,
   Layers,
   ListFilter,
-  Moon,
   Plus,
   Search,
   Settings,
-  Sun,
   Upload,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listProjects, type ProjectSummary } from "@/lib/api";
 import { relativeTime } from "@/lib/time";
-import { useTheme } from "@/lib/theme";
 import { useRegisterCommands } from "@/lib/app-commands";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,12 +29,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { ProjectCard } from "./project-card";
 import { ImportDialog } from "./import-dialog";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
@@ -50,7 +41,6 @@ export function Home() {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"recent" | "title" | "progress">("recent");
   const [showCompleted, setShowCompleted] = useState(true);
-  const { theme, toggle } = useTheme();
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [pending, setPending] = useState<string | null>(null);
@@ -184,9 +174,6 @@ export function Home() {
       <main className="flex-1 overflow-auto px-9 pt-7 pb-15">
         <div className="mb-2 flex items-end justify-between">
           <div>
-            <div className="mb-1.5 font-mono text-[11px] uppercase tracking-widest text-ink-3">
-              {filter}
-            </div>
             <h1 className="m-0 font-serif text-3xl font-medium tracking-tight text-ink">
               Your audiobook projects
             </h1>
@@ -236,24 +223,6 @@ export function Home() {
                 </DropdownMenuCheckboxItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon-lg"
-                    onClick={toggle}
-                    aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-                    className="bg-surface"
-                  >
-                    {theme === "dark" ? <Sun /> : <Moon />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {theme === "dark" ? "Light theme" : "Dark theme"}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
           </div>
         </div>
 
