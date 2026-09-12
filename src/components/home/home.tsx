@@ -9,6 +9,7 @@ import {
   Moon,
   Plus,
   Search,
+  Settings,
   Sun,
   Upload,
 } from "lucide-react";
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ProjectCard } from "./project-card";
 import { ImportDialog } from "./import-dialog";
+import { SettingsDialog } from "@/components/settings/settings-dialog";
 
 type Filter = "All" | "Recent" | "In progress" | "Completed";
 
@@ -52,6 +54,7 @@ export function Home() {
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [pending, setPending] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const refresh = useCallback(() => {
     listProjects().then(setProjects).catch(console.error);
@@ -167,6 +170,14 @@ export function Home() {
         })}
 
         <div className="flex-1" />
+
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13.5px] text-ink-2 transition-colors hover:bg-surface hover:text-ink"
+        >
+          <Settings size={15} strokeWidth={1.6} className="text-ink-3" />
+          <span className="flex-1">Settings</span>
+        </button>
       </aside>
 
       {/* MAIN */}
@@ -270,6 +281,8 @@ export function Home() {
           navigate(`/project/${id}`);
         }}
       />
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }
