@@ -207,7 +207,7 @@ describe("reflowLines", () => {
   });
 });
 
-import { furnitureKeys, lineKey } from "./extract-assemble";
+import { furnitureKeys, lineKey, type Block } from "./extract-assemble";
 
 /** Four pages that each carry the same running header and a varying footer. */
 function bookWithFurniture(): Block[][] {
