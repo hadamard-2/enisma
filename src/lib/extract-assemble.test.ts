@@ -206,3 +206,62 @@ describe("reflowLines", () => {
     expect(paragraphs[1]).toBe("It was a greeting.");
   });
 });
+
+import { furnitureKeys, lineKey } from "./extract-assemble";
+
+/** Four pages that each carry the same running header and a varying footer. */
+function bookWithFurniture(): Block[][] {
+  const ordinals = ["one", "two", "three", "four"];
+  return [33, 34, 35, 36].map((pageNumber, index) => [
+    { x: 342, lines: [line("Unit Two: Characteristics and Classification of Organisms", 342, 794)] },
+    { x: 57, lines: [line(`Body prose unique to page ${ordinals[index]}`, 57, 600)] },
+    { x: 57, lines: [line(`Grade 9 Biology ${pageNumber}`, 57, 40)] },
+  ]);
+}
+
+describe("lineKey", () => {
+  // Page numbers differ per page, so the raw text never repeats. Normalizing
+  // digit runs is what lets a footer collapse to one key.
+  it("normalizes digit runs so per-page numbers collapse together", () => {
+    expect(lineKey(line("Grade 9 Biology 33", 57, 40))).toBe(
+      lineKey(line("Grade 9 Biology 34", 57, 40)),
+    );
+  });
+
+  it("ignores case and surrounding space", () => {
+    expect(lineKey(line("  Unit Two  ", 342, 794))).toBe(lineKey(line("unit two", 342, 794)));
+  });
+
+  it("distinguishes the same text at a different height on the page", () => {
+    expect(lineKey(line("Fungi", 57, 794))).not.toBe(lineKey(line("Fungi", 57, 40)));
+  });
+});
+
+describe("furnitureKeys", () => {
+  it("finds a header repeating on every page", () => {
+    const keys = furnitureKeys(bookWithFurniture());
+    expect(keys.has(lineKey(line("Unit Two: Characteristics and Classification of Organisms", 342, 794)))).toBe(true);
+  });
+
+  it("finds a footer whose page number varies", () => {
+    const keys = furnitureKeys(bookWithFurniture());
+    expect(keys.has(lineKey(line("Grade 9 Biology 33", 57, 40)))).toBe(true);
+  });
+
+  it("leaves body prose alone", () => {
+    const keys = furnitureKeys(bookWithFurniture());
+    expect(keys.has(lineKey(line("Body prose unique to page one", 57, 600)))).toBe(false);
+  });
+
+  it("ignores a long line even when it repeats", () => {
+    const long = "x".repeat(200);
+    const pages: Block[][] = [0, 1, 2, 3].map(() => [{ x: 57, lines: [line(long, 57, 600)] }]);
+    expect(furnitureKeys(pages).has(lineKey(line(long, 57, 600)))).toBe(false);
+  });
+
+  // A two-page document would otherwise make every repeated line furniture.
+  it("needs at least two pages carrying a line before calling it furniture", () => {
+    const pages: Block[][] = [[{ x: 57, lines: [line("Only here", 57, 794)] }]];
+    expect(furnitureKeys(pages).size).toBe(0);
+  });
+});

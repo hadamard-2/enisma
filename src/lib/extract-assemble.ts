@@ -180,3 +180,58 @@ export function reflowLines(lines: Line[]): string[] {
   }
   return paragraphs;
 }
+
+/** Height of the vertical bands lines are bucketed into, in PDF units. */
+export const FURNITURE_Y_BAND = 12;
+/** Longest a line may be and still be considered page furniture. */
+export const FURNITURE_MAX_CHARS = 120;
+/** Share of pages a line must appear on to count as furniture. */
+export const FURNITURE_MIN_PAGE_SHARE = 0.5;
+
+/**
+ * Identity of a line for repetition counting: its text with digit runs
+ * flattened, plus the band of the page it sits in.
+ *
+ * Digits are flattened because a footer's page number changes on every page,
+ * so the literal text never repeats even though the furniture does. The band
+ * keeps a phrase in a header from matching the same phrase in body prose.
+ */
+export function lineKey(line: Line): string {
+  const normalized = line.text.replace(/\d+/g, "#").trim().toLowerCase();
+  return `${Math.round(line.y / FURNITURE_Y_BAND)}|${normalized}`;
+}
+
+/**
+ * Find the lines that are page furniture rather than content.
+ *
+ * Repetition across the book is the signal, which is why this takes every page
+ * at once and why extraction is a whole-document operation: a single page
+ * cannot tell a running header from a heading.
+ *
+ * The risk this accepts is stated in the spec — a short line that genuinely
+ * repeats at the same position on most pages, such as a recurring workbook
+ * instruction, is indistinguishable from a header by this rule.
+ */
+export function furnitureKeys(pages: Block[][]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const blocks of pages) {
+    const seenOnThisPage = new Set<string>();
+    for (const block of blocks) {
+      for (const line of block.lines) {
+        if (line.text.length > FURNITURE_MAX_CHARS) continue;
+        const key = lineKey(line);
+        if (seenOnThisPage.has(key)) continue;
+        seenOnThisPage.add(key);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
+  // At least two pages, so a one-page document has no furniture at all.
+  const threshold = Math.max(2, Math.ceil(pages.length * FURNITURE_MIN_PAGE_SHARE));
+  const furniture = new Set<string>();
+  for (const [key, appearances] of counts) {
+    if (appearances >= threshold) furniture.add(key);
+  }
+  return furniture;
+}
