@@ -192,4 +192,17 @@ describe("reflowLines", () => {
   it("returns nothing for no lines", () => {
     expect(reflowLines([])).toEqual([]);
   });
+
+  it("starts a new paragraph after a line ending with curly quote after punctuation", () => {
+    // Regression test: curly closing quote (U+201D) after terminal punctuation
+    // must be recognized as sentence-ending, not absorbed into the next line
+    const testText = "She said, " + String.fromCharCode(0x201d) + "Hello." + String.fromCharCode(0x201d);
+    const paragraphs = reflowLines([
+      line(testText, 57, 600),
+      line("It was a greeting.", 57, 584),
+    ]);
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0]).toBe(testText);
+    expect(paragraphs[1]).toBe("It was a greeting.");
+  });
 });

@@ -144,7 +144,7 @@ function startsListItem(text: string): boolean {
 
 /** True for a line whose last visible character closes a sentence. */
 function endsSentence(text: string): boolean {
-  return /[.!?:;]["'"')\]]?$/.test(text);
+  return /[.!?:;]["'”’)\]]?$/.test(text);
 }
 
 /**

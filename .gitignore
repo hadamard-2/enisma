@@ -25,3 +25,6 @@ dist-ssr
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Superpowers SDD scratch
+.superpowers/
