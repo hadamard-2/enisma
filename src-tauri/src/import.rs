@@ -21,9 +21,10 @@ pub fn import_project(
     title: &str,
     language: &str,
     src: &Path,
+    page_texts: &[String],
 ) -> Result<String, String> {
     let id = Uuid::new_v4().to_string();
-    import_with_id(conn, data_dir, &id, title, language, src)
+    import_with_id(conn, data_dir, &id, title, language, src, page_texts)
 }
 
 fn import_with_id(
@@ -33,6 +34,7 @@ fn import_with_id(
     title: &str,
     language: &str,
     src: &Path,
+    page_texts: &[String],
 ) -> Result<String, String> {
     if !src.is_file() {
         return Err("source file does not exist".into());
@@ -40,6 +42,16 @@ fn import_with_id(
 
     // Parse before copying: a corrupt file fails here, having written nothing.
     let page_count = pdf::count_pages(src)?;
+
+    // Rust owns the page count, as at M1: the process that owns the file owns
+    // the facts about it. The webview's own count is a cross-check, and a
+    // disagreement is loud rather than silently misfiling pages.
+    if page_texts.len() as i64 != page_count {
+        return Err(format!(
+            "extracted {} pages but the PDF has {page_count}",
+            page_texts.len()
+        ));
+    }
 
     let dir = data_dir.join("projects").join(id);
     fs::create_dir_all(&dir).map_err(|e| format!("could not create project directory: {e}"))?;
@@ -52,7 +64,9 @@ fn import_with_id(
     }
 
     let rel = format!("projects/{id}/source.pdf");
-    if let Err(e) = project::create_project_with_id(conn, id, title, language, &rel, page_count) {
+    if let Err(e) =
+        project::create_project_with_id(conn, id, title, language, &rel, page_count, page_texts)
+    {
         if let Err(cleanup_err) = fs::remove_dir_all(&dir) {
             eprintln!("warning: failed to clean up {}: {}", dir.display(), cleanup_err);
         }
@@ -79,11 +93,19 @@ mod tests {
         dir
     }
 
+    /// Three empty strings — one per fixture page — for tests that do not care
+    /// about the text itself.
+    fn no_text() -> Vec<String> {
+        vec![String::new(); 3]
+    }
+
     #[test]
     fn import_copies_the_pdf_and_creates_rows() {
         let mut conn = db::open_in_memory().unwrap();
         let data = temp_data_dir("ok");
-        let id = import_project(&mut conn, &data, "Grade 7 Science", "en", &fixture()).unwrap();
+        let id =
+            import_project(&mut conn, &data, "Grade 7 Science", "en", &fixture(), &no_text())
+                .unwrap();
 
         assert!(data.join("projects").join(&id).join("source.pdf").is_file());
 
@@ -103,7 +125,7 @@ mod tests {
     fn import_stores_a_relative_pdf_path() {
         let mut conn = db::open_in_memory().unwrap();
         let data = temp_data_dir("relpath");
-        let id = import_project(&mut conn, &data, "T", "am", &fixture()).unwrap();
+        let id = import_project(&mut conn, &data, "T", "am", &fixture(), &no_text()).unwrap();
         let stored: String = conn
             .query_row("SELECT pdf_path FROM projects WHERE id = ?1", [&id], |r| r.get(0))
             .unwrap();
@@ -117,7 +139,7 @@ mod tests {
         let bad = data.join("not-really.pdf");
         std::fs::write(&bad, b"nope").unwrap();
 
-        assert!(import_project(&mut conn, &data, "T", "en", &bad).is_err());
+        assert!(import_project(&mut conn, &data, "T", "en", &bad, &no_text()).is_err());
 
         let rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM projects", [], |r| r.get(0))
@@ -133,7 +155,9 @@ mod tests {
     fn a_missing_source_is_rejected() {
         let mut conn = db::open_in_memory().unwrap();
         let data = temp_data_dir("missing");
-        let err = import_project(&mut conn, &data, "T", "en", &data.join("ghost.pdf")).unwrap_err();
+        let err =
+            import_project(&mut conn, &data, "T", "en", &data.join("ghost.pdf"), &no_text())
+                .unwrap_err();
         assert!(err.contains("does not exist"), "got: {err}");
     }
 
@@ -147,7 +171,8 @@ mod tests {
         let source_dir = data.join("projects").join(id).join("source.pdf");
         std::fs::create_dir_all(&source_dir).unwrap();
 
-        let err = import_with_id(&mut conn, &data, id, "T", "en", &fixture()).unwrap_err();
+        let err =
+            import_with_id(&mut conn, &data, id, "T", "en", &fixture(), &no_text()).unwrap_err();
         assert!(err.contains("could not copy PDF"), "got: {err}");
 
         // Verify no project row was created.
@@ -177,7 +202,8 @@ mod tests {
         )
         .unwrap();
 
-        let err = import_with_id(&mut conn, &data, id, "T", "en", &fixture()).unwrap_err();
+        let err =
+            import_with_id(&mut conn, &data, id, "T", "en", &fixture(), &no_text()).unwrap_err();
         assert!(err.contains("could not save project"), "got: {err}");
 
         // Verify only the pre-inserted row exists (no second row from the failed import).
@@ -190,6 +216,49 @@ mod tests {
         assert!(
             !data.join("projects").join(id).exists(),
             "project directory should be removed after failed transaction"
+        );
+    }
+
+    #[test]
+    fn import_stores_the_extracted_text_per_page() {
+        let mut conn = db::open_in_memory().unwrap();
+        let data = temp_data_dir("text");
+        let texts = vec!["page one".to_string(), String::new(), "page three".to_string()];
+        let id = import_project(&mut conn, &data, "T", "en", &fixture(), &texts).unwrap();
+
+        let mut stmt = conn
+            .prepare("SELECT page_no, source_text, used_ocr FROM pages WHERE project_id = ?1 ORDER BY page_no")
+            .unwrap();
+        let rows: Vec<(i64, Option<String>, i64)> = stmt
+            .query_map([&id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(rows[0], (1, Some("page one".to_string()), 0));
+        // An extracted-but-blank page is the empty string, never NULL: NULL is
+        // reserved for "never extracted" and drives the repair pass.
+        assert_eq!(rows[1], (2, Some(String::new()), 0));
+        assert_eq!(rows[2], (3, Some("page three".to_string()), 0));
+    }
+
+    #[test]
+    fn a_page_count_disagreement_is_rejected_before_anything_is_written() {
+        let mut conn = db::open_in_memory().unwrap();
+        let data = temp_data_dir("count-mismatch");
+        let texts = vec!["only one page".to_string()];
+
+        let err = import_project(&mut conn, &data, "T", "en", &fixture(), &texts).unwrap_err();
+        assert!(err.contains("1"), "error should name the counts: {err}");
+
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM projects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "no project row should survive a mismatch");
+        assert!(
+            !data.join("projects").exists()
+                || std::fs::read_dir(data.join("projects")).unwrap().count() == 0,
+            "nothing should be copied when the counts disagree"
         );
     }
 }

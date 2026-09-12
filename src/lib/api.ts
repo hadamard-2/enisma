@@ -36,8 +36,12 @@ export const listProjects = () => invoke<ProjectSummary[]>("list_projects_cmd");
 
 export const getProject = (id: string) => invoke<ProjectDetail>("get_project_cmd", { id });
 
-export const importProject = (title: string, language: string, srcPath: string) =>
-  invoke<string>("import_project_cmd", { title, language, srcPath });
+export const importProject = (
+  title: string,
+  language: string,
+  srcPath: string,
+  pageTexts: string[],
+) => invoke<string>("import_project_cmd", { title, language, srcPath, pageTexts });
 
 export const updateProject = (
   id: string,

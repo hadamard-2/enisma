@@ -43,6 +43,7 @@ pub fn create_project_with_id(
     language: &str,
     pdf_path: &str,
     page_count: i64,
+    page_texts: &[String],
 ) -> rusqlite::Result<()> {
     let now = Utc::now().to_rfc3339();
     let tx = conn.transaction()?;
@@ -53,10 +54,15 @@ pub fn create_project_with_id(
         params![id, title, language, pdf_path, page_count, now],
     )?;
     {
-        let mut stmt =
-            tx.prepare("INSERT INTO pages (id, project_id, page_no) VALUES (?1, ?2, ?3)")?;
+        // `used_ocr` is 0 for every row: text-layer extraction is not OCR, and
+        // the column stays reserved until OCR actually arrives.
+        let mut stmt = tx.prepare(
+            "INSERT INTO pages (id, project_id, page_no, source_text, used_ocr)
+             VALUES (?1, ?2, ?3, ?4, 0)",
+        )?;
         for n in 1..=page_count {
-            stmt.execute(params![Uuid::new_v4().to_string(), id, n])?;
+            let text = page_texts.get((n - 1) as usize).map(String::as_str);
+            stmt.execute(params![Uuid::new_v4().to_string(), id, n, text])?;
         }
     }
     tx.commit()
@@ -249,6 +255,7 @@ pub fn import_project_cmd(
     title: String,
     language: String,
     src_path: String,
+    page_texts: Vec<String>,
 ) -> Result<String, String> {
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     crate::import::import_project(
@@ -257,6 +264,7 @@ pub fn import_project_cmd(
         &title,
         &language,
         std::path::Path::new(&src_path),
+        &page_texts,
     )
 }
 
@@ -317,8 +325,16 @@ mod tests {
     use crate::db;
 
     fn seed(conn: &mut rusqlite::Connection, id: &str, pages: i64) {
-        create_project_with_id(conn, id, "Grade 7 Science", "en", "projects/x/source.pdf", pages)
-            .unwrap();
+        create_project_with_id(
+            conn,
+            id,
+            "Grade 7 Science",
+            "en",
+            "projects/x/source.pdf",
+            pages,
+            &[],
+        )
+        .unwrap();
     }
 
     #[test]

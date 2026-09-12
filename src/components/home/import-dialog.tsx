@@ -40,7 +40,7 @@ export function ImportDialog({
     setBusy(true);
     setError(null);
     try {
-      onImported(await importProject(title.trim(), language, srcPath));
+      onImported(await importProject(title.trim(), language, srcPath, []));
     } catch (e) {
       setError(String(e));
     } finally {
