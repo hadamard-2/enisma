@@ -31,6 +31,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ProjectCard } from "./project-card";
+import { RenameDialog } from "./rename-dialog";
+import { DeleteDialog } from "./delete-dialog";
 import { ImportDialog } from "./import-dialog";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 
@@ -48,6 +50,11 @@ export function Home() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [pending, setPending] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The card that a menu action is acting on. Held here rather than per card so
+  // only one dialog exists at a time, and so it survives the card unmounting
+  // when the list refreshes underneath it.
+  const [renaming, setRenaming] = useState<ProjectSummary | null>(null);
+  const [deleting, setDeleting] = useState<ProjectSummary | null>(null);
 
   const refresh = useCallback(() => {
     listProjects().then(setProjects).catch(console.error);
@@ -242,10 +249,34 @@ export function Home() {
               key={p.id}
               project={p}
               onOpen={() => navigate(`/project/${p.id}`)}
+              onRename={() => setRenaming(p)}
+              onDelete={() => setDeleting(p)}
             />
           ))}
         </div>
       </main>
+
+      {renaming && (
+        <RenameDialog
+          project={renaming}
+          onCancel={() => setRenaming(null)}
+          onRenamed={() => {
+            setRenaming(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {deleting && (
+        <DeleteDialog
+          project={deleting}
+          onCancel={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null);
+            refresh();
+          }}
+        />
+      )}
 
       <ImportDialog
         key={pending ?? "none"}

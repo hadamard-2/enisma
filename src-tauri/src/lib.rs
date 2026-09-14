@@ -46,6 +46,7 @@ pub fn run() {
             project::import_project_cmd,
             project::read_pdf_bytes_cmd,
             project::update_project_cmd,
+            project::delete_project_cmd,
             project::get_page_cmd,
             project::save_page_text_cmd,
             project::save_page_source_text_cmd,

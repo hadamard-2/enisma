@@ -113,6 +113,14 @@
     "pages": {
       "message": "{reviewed}/{total} pp",
       "context": "On a project card: how many pages are finished out of the total. 'pp' is the English abbreviation for 'pages'. Use your language's equivalent short form, or drop it if there isn't one — space is tight."
+    },
+    "rename": {
+      "message": "Rename",
+      "context": "Menu item in the '…' menu on a project card. Opens a dialog to change the project's title. Keep it short — it sits in a narrow menu."
+    },
+    "delete": {
+      "message": "Delete",
+      "context": "Menu item in the '…' menu on a project card. Destructive; opens a confirmation dialog. Keep it short — it sits in a narrow menu."
     }
   },
   "status": {
@@ -553,6 +561,42 @@
     "weeksAgo": {
       "message": "{count, plural, one {# week ago} other {# weeks ago}}",
       "context": "Relative time, two weeks or more. Lowercase. There is no month or year tier — long-dormant projects say '40 weeks ago'."
+    }
+  },
+  "rename": {
+    "title": {
+      "message": "Rename project",
+      "context": "Heading of the dialog that changes a project's title."
+    },
+    "field": {
+      "message": "Title",
+      "context": "Label above the text box holding the project's new title."
+    },
+    "cancel": {
+      "message": "Cancel",
+      "context": "Button. Closes the rename dialog without changing anything."
+    },
+    "confirm": {
+      "message": "Save",
+      "context": "Button. Saves the new project title. Disabled until the title has visible text and actually differs from the current one."
+    }
+  },
+  "deleteProject": {
+    "title": {
+      "message": "Delete project?",
+      "context": "Heading of the confirmation dialog shown before a project is deleted."
+    },
+    "body": {
+      "message": "Deletes “{title}” and Enisma's copy of its PDF. Your original file is untouched. This can't be undone.",
+      "context": "Body of the delete confirmation dialog. {title} is the project's own title. Must make clear that this cannot be undone and that only Enisma's own copy of the PDF is removed — the user's original file is untouched."
+    },
+    "cancel": {
+      "message": "Cancel",
+      "context": "Button. Closes the delete dialog and keeps the project."
+    },
+    "confirm": {
+      "message": "Delete",
+      "context": "Button. Permanently deletes the project. Destructive — this is the point of no return."
     }
   }
 }

@@ -6,6 +6,8 @@
 
 use chrono::Utc;
 use rusqlite::{params, Connection};
+use std::fs;
+use std::path::{Path, PathBuf};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -195,6 +197,84 @@ pub fn set_page_done(
     touch(conn, project_id).map(|_| ())
 }
 
+/// Delete a project: its row, its pages, and the PDF copy Enisma made at import.
+///
+/// The row goes first and the folder second, deliberately. A folder left behind
+/// is invisible and harmless; a row whose PDF has been deleted is a card in the
+/// library that cannot be opened, which is a state the user actually hits.
+///
+/// Pages are not deleted by hand — `ON DELETE CASCADE` takes them, which works
+/// only because `db` turns `foreign_keys` on for every connection.
+pub fn delete_project(conn: &mut Connection, data_dir: &Path, id: &str) -> Result<(), String> {
+    let pdf_path: String = conn
+        .query_row("SELECT pdf_path FROM projects WHERE id = ?1", params![id], |r| r.get(0))
+        .map_err(|e| format!("could not find project {id}: {e}"))?;
+
+    // Resolve the folder before touching the database, so a path that does not
+    // belong to us aborts with the project still intact rather than leaving the
+    // library short of a row whose file is still on disk.
+    let dir = project_dir(data_dir, &pdf_path)?;
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let affected = tx
+        .execute("DELETE FROM projects WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err(format!("no project with id {id}"));
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+
+    // The row is gone, so the promise made to the user — this project is out of
+    // your library — is already kept. A folder we could not remove is a leak
+    // nobody can act on from a dialog, so it is reported to the log, not to the
+    // user as a failed delete.
+    if dir.exists() {
+        if let Err(e) = fs::remove_dir_all(&dir) {
+            eprintln!("warning: deleted project {id} but failed to remove {}: {e}", dir.display());
+        }
+    }
+    Ok(())
+}
+
+/// The directory holding a project's copied PDF, refusing anything that escapes
+/// `<data_dir>/projects/`.
+///
+/// `pdf_path` is written by import as `projects/<uuid>/source.pdf` and is never
+/// user-supplied, so this guard is not defending against an attacker — it is
+/// making sure a malformed or hand-edited row can never aim a recursive delete
+/// at an arbitrary directory.
+fn project_dir(data_dir: &Path, pdf_path: &str) -> Result<PathBuf, String> {
+    let root = data_dir.join("projects");
+    let dir = data_dir
+        .join(pdf_path)
+        .parent()
+        .ok_or_else(|| format!("project path {pdf_path} has no directory"))?
+        .to_path_buf();
+
+    // Compare lexically: the folder may already be gone, and `canonicalize`
+    // fails on a path that does not exist.
+    let normalized = normalize(&dir);
+    if !normalized.starts_with(normalize(&root)) || normalized == normalize(&root) {
+        return Err(format!("project path {pdf_path} resolves outside the projects directory"));
+    }
+    Ok(normalized)
+}
+
+/// Resolve `.` and `..` lexically, without touching the filesystem.
+fn normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Apply a partial patch to one project.
 ///
 /// One transaction, so a patch is all-or-nothing: a failure part-way through
@@ -334,6 +414,19 @@ pub fn update_project_cmd(
         .map_err(|e| e.to_string())
 }
 
+/// Delete a project and the PDF copy made for it. Irreversible.
+///
+/// `async` so a recursive directory removal does not block the IPC thread.
+#[tauri::command(async)]
+pub fn delete_project_cmd(
+    db: State<'_, Db>,
+    data: State<'_, DataDir>,
+    id: String,
+) -> Result<(), String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    delete_project(&mut conn, &data.0, &id)
+}
+
 #[tauri::command]
 pub fn get_page_cmd(db: State<'_, Db>, project_id: String, page_no: i64) -> Result<PageText, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -389,6 +482,13 @@ pub fn read_pdf_bytes_cmd(path: String) -> Result<tauri::ipc::Response, String> 
 mod tests {
     use super::*;
     use crate::db;
+
+    fn temp_data_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("enisma-test-{name}"));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     fn seed(conn: &mut rusqlite::Connection, id: &str, pages: i64) {
         create_project_with_id(
@@ -638,4 +738,96 @@ mod tests {
         conn.execute("UPDATE pages SET source_text = NULL WHERE page_no = 2", []).unwrap();
         assert_eq!(get_project(&conn, "p1").unwrap().pages_missing_text, 1);
     }
+
+    #[test]
+    fn delete_project_removes_the_row_its_pages_and_its_folder() {
+        let mut conn = db::open_in_memory().unwrap();
+        let data = temp_data_dir("delete-ok");
+        let dir = data.join("projects").join("abc");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("source.pdf"), b"%PDF-1.7").unwrap();
+        create_project_with_id(&mut conn, "abc", "T", "en", "projects/abc/source.pdf", 2, &[])
+            .unwrap();
+
+        delete_project(&mut conn, &data, "abc").unwrap();
+
+        let projects: i64 = conn
+            .query_row("SELECT COUNT(*) FROM projects WHERE id = 'abc'", [], |r| r.get(0))
+            .unwrap();
+        let pages: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pages WHERE project_id = 'abc'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(projects, 0);
+        // Pages go via ON DELETE CASCADE, which only fires because `db` turns
+        // `foreign_keys` on; this asserts the cascade, not just the row.
+        assert_eq!(pages, 0, "pages should cascade away with their project");
+        assert!(!dir.exists(), "the project folder should be gone");
+    }
+
+    #[test]
+    fn delete_project_rejects_an_unknown_id() {
+        let mut conn = db::open_in_memory().unwrap();
+        let data = temp_data_dir("delete-unknown");
+        assert!(delete_project(&mut conn, &data, "ghost").is_err());
+    }
+
+    #[test]
+    fn delete_project_leaves_other_projects_and_their_folders_alone() {
+        let mut conn = db::open_in_memory().unwrap();
+        let data = temp_data_dir("delete-neighbour");
+        for id in ["abc", "xyz"] {
+            let dir = data.join("projects").join(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("source.pdf"), b"%PDF-1.7").unwrap();
+            create_project_with_id(
+                &mut conn,
+                id,
+                "T",
+                "en",
+                &format!("projects/{id}/source.pdf"),
+                1,
+                &[],
+            )
+            .unwrap();
+        }
+
+        delete_project(&mut conn, &data, "abc").unwrap();
+
+        let survivors: i64 = conn
+            .query_row("SELECT COUNT(*) FROM projects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(survivors, 1);
+        assert!(data.join("projects").join("xyz").join("source.pdf").is_file());
+    }
+
+    #[test]
+    fn delete_project_refuses_a_pdf_path_that_escapes_the_data_dir() {
+        let mut conn = db::open_in_memory().unwrap();
+        let data = temp_data_dir("delete-escape");
+        let outside = data.join("not-projects");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("source.pdf"), b"%PDF-1.7").unwrap();
+        create_project_with_id(
+            &mut conn,
+            "abc",
+            "T",
+            "en",
+            "../not-projects/source.pdf",
+            1,
+            &[],
+        )
+        .unwrap();
+
+        let err = delete_project(&mut conn, &data, "abc").unwrap_err();
+
+        assert!(err.contains("outside"), "unexpected error: {err}");
+        // The row survives too: refusing to touch the disk must not leave a
+        // project deleted from the library with its file still on disk.
+        let projects: i64 = conn
+            .query_row("SELECT COUNT(*) FROM projects WHERE id = 'abc'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(projects, 1);
+        assert!(outside.join("source.pdf").is_file(), "nothing outside should be removed");
+    }
+
 }

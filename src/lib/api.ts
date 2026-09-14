@@ -50,6 +50,9 @@ export const updateProject = (
   patch: { title?: string; language?: string; rate?: number },
 ) => invoke<void>("update_project_cmd", { id, ...patch });
 
+/** Delete a project, its pages, and the PDF copy made for it. Irreversible. */
+export const deleteProject = (id: string) => invoke<void>("delete_project_cmd", { id });
+
 export const getPage = (projectId: string, pageNo: number) =>
   invoke<PageText>("get_page_cmd", { projectId, pageNo });
 
