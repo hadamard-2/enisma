@@ -284,7 +284,7 @@ function Menu({
         disabled={disabled}
         onPointerEnter={onHover(menuKey)}
         className={cn(
-          "cursor-pointer rounded-md px-2 py-1 text-[13px] text-ink-2 outline-none! transition-colors",
+          "cursor-pointer rounded-md px-2 py-1 text-[13px] font-medium text-ink-2 outline-none! transition-colors",
           "hover:bg-paper-3 hover:text-ink data-[state=open]:bg-paper-3 data-[state=open]:text-ink",
           "disabled:pointer-events-none disabled:opacity-40",
         )}
