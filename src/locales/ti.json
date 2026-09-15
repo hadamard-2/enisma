@@ -103,6 +103,14 @@
     "newTileBody": {
       "message": "መማሃሪ መጽሓፍ ካብ ዲስክ ኣእቱ።",
       "context": "Supporting line under 'Start a new project'. A full sentence."
+    },
+    "dropAccept": {
+      "message": "ንምእታው ደርቢ",
+      "context": "Shown inside a dashed overlay across the whole library while a PDF is being dragged over the window, before it is dropped. Confirms dropping it here will import it."
+    },
+    "dropReject": {
+      "message": "PDF ፋይላት ጥራይ ክኣትዋ ይኽእላ",
+      "context": "Shown inside the same overlay when the file being dragged over the library is not a PDF. Explains why nothing will happen if it is dropped."
     }
   },
   "projectCard": {

@@ -14,6 +14,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listProjects, type ProjectSummary } from "@/lib/api";
 import { useRelativeTime } from "@/lib/use-relative-time";
 import { useRegisterCommands } from "@/lib/app-commands";
@@ -49,6 +50,10 @@ export function Home() {
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [pending, setPending] = useState<string | null>(null);
+  // "accept" while a dragged PDF is over the window, "reject" for anything
+  // else, null the rest of the time. Checked at `enter`, since the OS gives
+  // the file's path before the drop, not only at `drop`.
+  const [dropState, setDropState] = useState<"accept" | "reject" | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The card that a menu action is acting on. Held here rather than per card so
   // only one dialog exists at a time, and so it survives the card unmounting
@@ -74,6 +79,28 @@ export function Home() {
   useRegisterCommands(
     useMemo(() => ({ importPdf: () => void pickFile() }), []),
   );
+
+  // Dropping a PDF onto the library imports it the same way picking one does.
+  // Tauri intercepts the OS-level file drop before any HTML5 `ondrop` would
+  // fire, so this goes through the webview's own drag-drop event instead.
+  useEffect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
+      if (payload.type === "enter") {
+        setDropState(payload.paths[0]?.toLowerCase().endsWith(".pdf") ? "accept" : "reject");
+      } else if (payload.type === "drop") {
+        setDropState(null);
+        const pdf = payload.paths.find((p) => p.toLowerCase().endsWith(".pdf"));
+        if (pdf) setPending(pdf);
+      } else if (payload.type === "leave") {
+        setDropState(null);
+      }
+      // "over" fires continuously while hovering and needs no reaction —
+      // `dropState` was already set on "enter".
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   const navItems = useMemo(
     () => [
@@ -181,7 +208,22 @@ export function Home() {
       </aside>
 
       {/* MAIN */}
-      <main className="flex-1 overflow-auto px-9 pt-7 pb-15">
+      <main className="relative flex-1 overflow-auto px-9 pt-7 pb-15">
+        {dropState && (
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-3 z-20 grid place-items-center rounded-2xl border-2 border-dashed duration-150 animate-in fade-in zoom-in-95",
+              dropState === "accept"
+                ? "border-teal bg-teal/5 text-teal"
+                : "border-line-2 bg-paper-2/70 text-ink-3",
+            )}
+          >
+            <div className="rounded-lg bg-paper px-4 py-2 font-serif text-base shadow-paper-md">
+              {t(dropState === "accept" ? "library.dropAccept" : "library.dropReject")}
+            </div>
+          </div>
+        )}
+
         <div className="mb-2 flex items-end justify-between">
           <div>
             <h1 className="m-0 font-serif text-3xl font-medium tracking-tight text-ink">
