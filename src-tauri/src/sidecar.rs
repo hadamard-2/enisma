@@ -299,6 +299,79 @@ async fn query_health(state: &SidecarState) -> Result<serde_json::Value, String>
         .map_err(|e| e.to_string())
 }
 
+/// Suffix the JSON helpers put on the error for a sidecar 404, so a caller can
+/// tell "no such job" from a transport failure without parsing a status line.
+/// The sidecar answers 404 both for a job id it never had and for one its
+/// bounded registry has since pruned — one condition, one branch.
+const NOT_FOUND: &str = "not found";
+
+/// Whether an error from the JSON helpers was the sidecar's 404.
+pub fn is_not_found(err: &str) -> bool {
+    err.ends_with(NOT_FOUND)
+}
+
+fn port_of(state: &SidecarState) -> Result<u16, String> {
+    state
+        .inner
+        .lock()
+        .unwrap()
+        .port
+        .ok_or_else(|| "sidecar starting".to_string())
+}
+
+async fn read_json(resp: reqwest::Response, route: &str) -> Result<serde_json::Value, String> {
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("{route} {NOT_FOUND}"));
+    }
+    if !resp.status().is_success() {
+        return Err(format!("{route} returned {}", resp.status()));
+    }
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn get_json(state: &SidecarState, route: &str) -> Result<serde_json::Value, String> {
+    let url = format!("http://{LOOPBACK}:{}{route}", port_of(state)?);
+    let resp = state
+        .http
+        .get(&url)
+        .bearer_auth(&state.token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    read_json(resp, route).await
+}
+
+pub async fn post_json(
+    state: &SidecarState,
+    route: &str,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let url = format!("http://{LOOPBACK}:{}{route}", port_of(state)?);
+    let resp = state
+        .http
+        .post(&url)
+        .bearer_auth(&state.token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    read_json(resp, route).await
+}
+
+pub async fn delete_json(state: &SidecarState, route: &str) -> Result<serde_json::Value, String> {
+    let url = format!("http://{LOOPBACK}:{}{route}", port_of(state)?);
+    let resp = state
+        .http
+        .delete(&url)
+        .bearer_auth(&state.token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    read_json(resp, route).await
+}
+
 /// Proxy to the sidecar's `/health`. The frontend calls this to verify the
 /// backend is up.
 #[tauri::command]
@@ -306,4 +379,21 @@ pub async fn sidecar_health(
     state: State<'_, SidecarState>,
 ) -> Result<serde_json::Value, String> {
     query_health(&state).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_sidecar_404_is_recognisable_as_not_found() {
+        assert!(is_not_found(&format!("/jobs/abc {NOT_FOUND}")));
+    }
+
+    #[test]
+    fn other_failures_are_not_mistaken_for_not_found() {
+        assert!(!is_not_found("/jobs/abc returned 500 Internal Server Error"));
+        assert!(!is_not_found("sidecar starting"));
+        assert!(!is_not_found("error sending request for url"));
+    }
 }

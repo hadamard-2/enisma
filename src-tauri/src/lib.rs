@@ -1,4 +1,5 @@
 mod audio;
+mod convert;
 mod db;
 mod import;
 mod pdf;
@@ -23,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState::new())
+        .manage(convert::ActiveConversion::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(data_dir.join("projects"))?;
@@ -52,6 +54,9 @@ pub fn run() {
             project::save_page_text_cmd,
             project::save_page_source_text_cmd,
             project::set_page_done_cmd,
+            convert::convert_page_cmd,
+            convert::cancel_conversion_cmd,
+            convert::get_page_audio_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
