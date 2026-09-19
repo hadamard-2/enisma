@@ -24,6 +24,8 @@ export interface ProjectDetail {
   /** Absolute path, already resolved by Rust; feed to convertFileSrc. */
   pdfPath: string;
   rate: number;
+  /** Right-hand panel's remembered voice, not a book property; the default M5's export offers. */
+  voice: string | null;
   pages: PageMeta[];
   /** Pages never extracted (`source_text IS NULL`). Non-zero triggers repair. */
   pagesMissingText: number;
@@ -47,7 +49,7 @@ export const importProject = (
 
 export const updateProject = (
   id: string,
-  patch: { title?: string; language?: string; rate?: number },
+  patch: { title?: string; language?: string; rate?: number; voice?: string },
 ) => invoke<void>("update_project_cmd", { id, ...patch });
 
 /** Delete a project, its pages, and the PDF copy made for it. Irreversible. */

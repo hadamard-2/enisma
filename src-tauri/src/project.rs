@@ -111,6 +111,10 @@ pub struct ProjectDetail {
     /// resolves this to an absolute path before it reaches the webview.
     pub pdf_path: String,
     pub rate: f64,
+    /// The right-hand panel's remembered voice, not a property of the book.
+    /// Export chooses its own voice per export; this is only what the user
+    /// last experimented with, and the default the export flow offers.
+    pub voice: Option<String>,
     pub pages: Vec<PageMeta>,
     /// How many pages have never been extracted (`source_text IS NULL`).
     /// Drives the editor's repair pass; `''` pages are extracted and do not
@@ -126,13 +130,14 @@ pub struct PageText {
 }
 
 pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetail> {
-    let (title, language, page_count, pdf_path, rate, pages_missing_text) = conn.query_row(
-        "SELECT title, language, page_count, pdf_path, rate,
-                (SELECT COUNT(*) FROM pages WHERE project_id = p.id AND source_text IS NULL)
-         FROM projects p WHERE id = ?1",
-        [id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
-    )?;
+    let (title, language, page_count, pdf_path, rate, voice, pages_missing_text) = conn
+        .query_row(
+            "SELECT title, language, page_count, pdf_path, rate, voice,
+                    (SELECT COUNT(*) FROM pages WHERE project_id = p.id AND source_text IS NULL)
+             FROM projects p WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+        )?;
 
     let mut stmt = conn
         .prepare("SELECT page_no, done FROM pages WHERE project_id = ?1 ORDER BY page_no")?;
@@ -152,6 +157,7 @@ pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetai
         page_count,
         pdf_path,
         rate,
+        voice,
         pages,
         pages_missing_text,
     })
@@ -287,6 +293,7 @@ pub fn update_project(
     title: Option<&str>,
     language: Option<&str>,
     rate: Option<f64>,
+    voice: Option<&str>,
 ) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     if let Some(t) = title {
@@ -297,6 +304,9 @@ pub fn update_project(
     }
     if let Some(r) = rate {
         tx.execute("UPDATE projects SET rate = ?2 WHERE id = ?1", params![id, r])?;
+    }
+    if let Some(v) = voice {
+        tx.execute("UPDATE projects SET voice = ?2 WHERE id = ?1", params![id, v])?;
     }
     // `touch` runs unconditionally against the same row, so its affected count
     // is what distinguishes a real id from a bogus one — no matter which of the
@@ -408,10 +418,18 @@ pub fn update_project_cmd(
     title: Option<String>,
     language: Option<String>,
     rate: Option<f64>,
+    voice: Option<String>,
 ) -> Result<(), String> {
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-    update_project(&mut conn, &id, title.as_deref(), language.as_deref(), rate)
-        .map_err(|e| e.to_string())
+    update_project(
+        &mut conn,
+        &id,
+        title.as_deref(),
+        language.as_deref(),
+        rate,
+        voice.as_deref(),
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Delete a project and the PDF copy made for it. Irreversible.
@@ -585,7 +603,7 @@ mod tests {
     fn update_project_applies_only_the_fields_present() {
         let mut conn = db::open_in_memory().unwrap();
         seed(&mut conn, "abc", 1);
-        update_project(&mut conn, "abc", Some("New Title"), None, None).unwrap();
+        update_project(&mut conn, "abc", Some("New Title"), None, None, None).unwrap();
         let detail = get_project(&conn, "abc").unwrap();
         assert_eq!(detail.title, "New Title");
         assert_eq!(detail.language, "en", "language must be untouched");
@@ -620,7 +638,7 @@ mod tests {
     fn update_project_with_unknown_id_is_rejected() {
         let mut conn = db::open_in_memory().unwrap();
         seed(&mut conn, "abc", 1);
-        let result = update_project(&mut conn, "bogus-id", Some("Ghost"), None, None);
+        let result = update_project(&mut conn, "bogus-id", Some("Ghost"), None, None, None);
         assert!(result.is_err(), "a patch that matches no project must not report success");
         assert_eq!(
             get_project(&conn, "abc").unwrap().title,
@@ -633,7 +651,7 @@ mod tests {
     fn update_project_applies_a_multi_field_patch() {
         let mut conn = db::open_in_memory().unwrap();
         seed(&mut conn, "abc", 1);
-        update_project(&mut conn, "abc", Some("New Title"), Some("am"), Some(1.25)).unwrap();
+        update_project(&mut conn, "abc", Some("New Title"), Some("am"), Some(1.25), None).unwrap();
         let detail = get_project(&conn, "abc").unwrap();
         assert_eq!(detail.title, "New Title");
         assert_eq!(detail.language, "am");
@@ -653,7 +671,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = update_project(&mut conn, "abc", Some("New Title"), Some("am"), Some(1.25));
+        let result = update_project(&mut conn, "abc", Some("New Title"), Some("am"), Some(1.25), None);
         assert!(result.is_err(), "the failing statement must fail the whole patch");
 
         let detail = get_project(&conn, "abc").unwrap();
@@ -830,4 +848,45 @@ mod tests {
         assert!(outside.join("source.pdf").is_file(), "nothing outside should be removed");
     }
 
+    #[test]
+    fn a_new_project_has_no_remembered_voice() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(
+            &mut conn, "p1", "Biology", "en", "projects/p1/source.pdf", 1,
+            &["one".into()],
+        )
+        .unwrap();
+        let d = get_project(&conn, "p1").unwrap();
+        assert_eq!(d.voice, None);
+        assert_eq!(d.rate, 1.0);
+    }
+
+    #[test]
+    fn update_project_remembers_the_panel_voice() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(
+            &mut conn, "p1", "Biology", "en", "projects/p1/source.pdf", 1,
+            &["one".into()],
+        )
+        .unwrap();
+        update_project(&mut conn, "p1", None, None, Some(1.25), Some("am_michael")).unwrap();
+        let d = get_project(&conn, "p1").unwrap();
+        assert_eq!(d.voice.as_deref(), Some("am_michael"));
+        assert_eq!(d.rate, 1.25);
+    }
+
+    #[test]
+    fn update_project_leaves_the_voice_alone_when_not_supplied() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(
+            &mut conn, "p1", "Biology", "en", "projects/p1/source.pdf", 1,
+            &["one".into()],
+        )
+        .unwrap();
+        update_project(&mut conn, "p1", None, None, None, Some("af_heart")).unwrap();
+        update_project(&mut conn, "p1", Some("Renamed"), None, None, None).unwrap();
+        let d = get_project(&conn, "p1").unwrap();
+        assert_eq!(d.voice.as_deref(), Some("af_heart"));
+        assert_eq!(d.title, "Renamed");
+    }
 }
