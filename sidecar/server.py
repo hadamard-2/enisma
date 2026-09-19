@@ -21,6 +21,10 @@ import threading
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
+
+from jobs import Job, JobRegistry
+from tts import Engine
 
 TOKEN_ENV = "HEARBOOK_SIDECAR_TOKEN"
 HOST_ENV = "HEARBOOK_SIDECAR_HOST"
@@ -46,6 +50,65 @@ app = FastAPI(title="HearBook sidecar", version="0")
 @app.get("/health")
 def health(_: None = Depends(_require_token)) -> dict:
     return {"status": "ok", "version": "0", "engines": {}}
+
+
+JOBS = JobRegistry()
+
+# Language code -> engine. Populated as the real engines land; tests inject a
+# fake. An absent language becomes an error job the client can read, not a crash.
+ENGINES_BY_LANGUAGE: dict[str, Engine] = {}
+
+
+class TtsRequest(BaseModel):
+    text: str
+    language: str
+    voice: str = ""
+    rate: float = 1.0
+    out_path: str
+
+
+def _tts_work(req: TtsRequest):
+    def work(job: Job) -> None:
+        engine = ENGINES_BY_LANGUAGE.get(req.language)
+        if engine is None:
+            raise RuntimeError(f"no TTS engine for language {req.language!r}")
+
+        def on_progress(fraction: float) -> bool:
+            job.progress = fraction
+            return not job.cancel.is_set()
+
+        sample_rate, duration_ms = engine.synthesize(
+            req.text, req.voice, req.rate, req.out_path, on_progress
+        )
+        job.sample_rate = sample_rate
+        job.duration_ms = duration_ms
+
+    return work
+
+
+@app.post("/jobs/tts")
+def start_tts(req: TtsRequest, _: None = Depends(_require_token)) -> dict:
+    """Start synthesis and return at once. Poll GET /jobs/{id} for progress."""
+    return {"jobId": JOBS.start(_tts_work(req))}
+
+
+@app.get("/jobs/{job_id}")
+def job_status(job_id: str, _: None = Depends(_require_token)) -> dict:
+    snapshot = JOBS.snapshot(job_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="no such job")
+    return snapshot
+
+
+@app.delete("/jobs/{job_id}")
+def cancel_job(job_id: str, _: None = Depends(_require_token)) -> dict:
+    if not JOBS.cancel(job_id):
+        raise HTTPException(status_code=404, detail="no such job")
+    snapshot = JOBS.snapshot(job_id)
+    if snapshot is None:
+        # Pruned between the cancel and the read — the job is gone either way.
+        raise HTTPException(status_code=404, detail="no such job")
+    return snapshot
 
 
 def _watch_stdin_eof() -> None:
