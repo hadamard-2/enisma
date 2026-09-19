@@ -29,3 +29,13 @@ def test_expanded_text_still_holding_digits_is_rejected():
     with pytest.raises(RuntimeError) as exc:
         assert_no_digits("1000000000", "ti")
     assert "ti" in str(exc.value)
+
+
+def test_expanded_text_still_holding_an_ethiopic_numeral_is_rejected():
+    with pytest.raises(RuntimeError) as exc:
+        assert_no_digits("፲፭ ተማሪዎች", "am")
+    assert "am" in str(exc.value)
+
+
+def test_expanded_text_without_any_script_numeral_passes():
+    assert_no_digits("students", "om")
