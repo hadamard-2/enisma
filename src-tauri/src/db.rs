@@ -33,6 +33,19 @@ CREATE TABLE pages (
 CREATE INDEX pages_by_project ON pages(project_id, page_no);
 "#;
 
+/// v2 adds the metadata that makes a page's cached audio self-describing:
+/// which text it was made from, and with which voice and rate. Freshness is
+/// decided by comparing these, never by re-synthesizing — VITS is stochastic,
+/// so the same text produces different audio every run and the bytes can never
+/// be their own source of truth.
+const V2_MIGRATION: &str = r#"
+ALTER TABLE pages ADD COLUMN audio_text_hash   TEXT;
+ALTER TABLE pages ADD COLUMN audio_voice       TEXT;
+ALTER TABLE pages ADD COLUMN audio_rate        REAL;
+ALTER TABLE pages ADD COLUMN audio_sample_rate INTEGER;
+ALTER TABLE pages ADD COLUMN audio_duration_ms INTEGER;
+"#;
+
 /// Apply pending migrations. Versioned with `PRAGMA user_version` so later
 /// milestones can add steps without rewriting this.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
@@ -40,6 +53,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if version < 1 {
         conn.execute_batch(V1_SCHEMA)?;
         conn.pragma_update(None, "user_version", 1)?;
+    }
+    if version < 2 {
+        conn.execute_batch(V2_MIGRATION)?;
+        conn.pragma_update(None, "user_version", 2)?;
     }
     Ok(())
 }
@@ -69,27 +86,6 @@ mod tests {
     use rusqlite::Connection;
 
     #[test]
-    fn migrate_from_empty_reaches_version_1() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        let v: i64 = conn
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .unwrap();
-        assert_eq!(v, 1);
-    }
-
-    #[test]
-    fn migrate_is_idempotent() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        migrate(&conn).unwrap();
-        let v: i64 = conn
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .unwrap();
-        assert_eq!(v, 1);
-    }
-
-    #[test]
     fn foreign_keys_are_enforced() {
         let conn = open_in_memory().unwrap();
         let err = conn.execute(
@@ -97,5 +93,53 @@ mod tests {
             [],
         );
         assert!(err.is_err(), "FK violation should be rejected");
+    }
+
+    #[test]
+    fn migrate_brings_a_fresh_database_to_version_2() {
+        let conn = open_in_memory().unwrap();
+        let version: i64 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+    }
+
+    #[test]
+    fn migrate_adds_the_audio_columns_to_an_existing_v1_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(super::V1_SCHEMA).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+
+        migrate(&conn).unwrap();
+
+        // A v1 row must survive the migration with NULL audio metadata.
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('pages')")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        for expected in [
+            "audio_path",
+            "audio_text_hash",
+            "audio_voice",
+            "audio_rate",
+            "audio_sample_rate",
+            "audio_duration_ms",
+        ] {
+            assert!(cols.iter().any(|c| c == expected), "missing column {expected}");
+        }
+    }
+
+    #[test]
+    fn migrate_is_idempotent() {
+        let conn = open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let version: i64 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
     }
 }
