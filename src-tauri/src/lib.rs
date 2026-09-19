@@ -1,3 +1,4 @@
+mod audio;
 mod db;
 mod import;
 mod pdf;
