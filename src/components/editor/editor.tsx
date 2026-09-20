@@ -22,6 +22,7 @@ import {
   getPage,
   getPageAudio,
   getProject,
+  listVoices,
   savePageSourceText,
   savePageText,
   setPageDone,
@@ -33,8 +34,6 @@ import {
 } from "@/lib/api";
 import { cancelAbandonedConversion } from "@/lib/audio-state";
 import { extractFromUrl } from "@/lib/extract-open";
-import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
-import type { LanguageCode } from "@/lib/languages";
 import { cn } from "@/lib/utils";
 import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
 import { useRegisterCommands } from "@/lib/app-commands";
@@ -174,17 +173,48 @@ function Editor({
   );
   const [title, setTitle] = useState(project.title);
   const [language, setLanguage] = useState<string>(project.language);
-  const voices = useMemo(
-    () => PLACEHOLDER_VOICES[language as LanguageCode] ?? [],
-    [language],
-  );
+  const [voices, setVoices] = useState<string[]>([]);
   // `projects.voice`/`projects.rate` are the panel's remembered position, so a
   // reopened project offers the same settings its stored take was made with —
   // without which every page would open reporting itself out of date.
-  const [voice, setVoice] = useState(
-    project.voice ?? (PLACEHOLDER_VOICES[project.language] ?? [])[0] ?? "",
-  );
+  const [voice, setVoice] = useState(project.voice ?? "");
+  // Mirrors `voice` for the loader's async continuation below, so the
+  // reconciliation reads the CURRENT selection without making the fetch
+  // re-run every time the user picks a different voice.
+  const voiceRef = useRef(voice);
+  useEffect(() => {
+    voiceRef.current = voice;
+  }, [voice]);
   const [speed, setSpeed] = useState(project.rate);
+
+  // The voice list belongs to the language, so it is re-fetched on every
+  // switch. An empty list is a normal state, not a failure: the single-speaker
+  // Ge'ez languages have no voice to offer, and neither does English before
+  // its models finish downloading. The panel hides the field when it is empty.
+  useEffect(() => {
+    let cancelled = false;
+    listVoices(language)
+      .then((list) => {
+        if (cancelled) return;
+        setVoices(list);
+        // A selection carried over from another language must not survive the
+        // switch - it would name a voice this language cannot speak with.
+        const next = list.includes(voiceRef.current)
+          ? voiceRef.current
+          : (list[0] ?? "");
+        if (next !== voiceRef.current) {
+          voiceRef.current = next;
+          setVoice(next);
+          updateProject(project.id, { voice: next }).catch(console.error);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setVoices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [language, project.id]);
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");

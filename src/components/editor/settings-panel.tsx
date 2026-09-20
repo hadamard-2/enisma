@@ -73,11 +73,6 @@ export function SettingsPanel({
     error: convertError,
   });
 
-  useEffect(() => {
-    if (voices.length === 0) return;
-    if (!voices.includes(voice) && voices[0]) setVoice(voices[0]);
-  }, [voice, voices, setVoice]);
-
   const path = audio?.path ?? null;
   const src = path ? convertFileSrc(path) : null;
   const audioRef = useRef<HTMLAudioElement | null>(null);
