@@ -85,3 +85,30 @@ def test_the_rate_is_passed_to_the_engine_as_speed(monkeypatch, tmp_path):
     engine = _engine(monkeypatch, fake)
     engine.synthesize("one።", "", 1.5, str(tmp_path / "p.wav"), lambda f: True)
     assert fake.last_speed == 1.5
+
+
+def test_what_reaches_sherpa_is_latin_only_with_periods_kept(monkeypatch, tmp_path):
+    """The whole Ge'ez path rests on this: prepared text inside MMS's symbols.
+
+    No digits and no punctuation beyond apostrophe and hyphen (the symbol table
+    has nothing to map them to), but the sentence periods survive -- they are
+    what sherpa-onnx segments utterances on, and hence what makes progress and
+    cancellation possible at all.
+    """
+    fake = FakeTts()
+    engine = _engine(monkeypatch, fake)
+    engine._language = "am"
+    # A romanizer standing in for uroman: Ge'ez full stop -> '.', and the
+    # numeral run '፪' -> '2' exactly as uroman resolves it, so the number
+    # expansion that runs before romanization has something real to consume.
+    engine._romanize = lambda text, lcode: text.replace("።", ".").replace("፪", "2")
+    engine.synthesize(
+        "selam 3 neger። kalie, neger (፪)፤ new!",
+        "", 1.0, str(tmp_path / "p.wav"), lambda f: True,
+    )
+    sent = fake.last_text
+    assert "." in sent
+    assert not any(ch.isdigit() for ch in sent)
+    assert set(sent) <= set(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'- ."
+    ), sent

@@ -6,8 +6,15 @@ language-specific — romanization, number expansion, chunking — lives inside 
 engine, because it differs completely between Kokoro and MMS.
 
 `on_progress` returning False asks the engine to stop early. Both engines can
-honour that between units of work: sherpa-onnx takes a callback whose non-zero
-return halts generation, and the Kokoro path checks between chunks.
+honour that between units of work: sherpa-onnx takes a callback whose return
+value it reads as "keep going", so returning **zero halts** generation and
+non-zero continues it, and the Kokoro path checks between chunks.
+
+Beware: sherpa-onnx's own pybind docstring states the opposite (that a non-zero
+return stops generation). It is stale relative to its own C++ at the pinned tag
+v1.13.8, which does `should_continue = callback(...)` and loops while that is
+truthy. The code here matches the implementation, not the docstring -- do not
+"correct" it, or every page truncates after its first batch.
 """
 
 from __future__ import annotations

@@ -199,11 +199,13 @@ async def _serve() -> None:
     await serve_task
 
 
-def main() -> int:
-    if not _token:
-        _emit({"ready": False, "error": f"{TOKEN_ENV} not set"})
-        return 1
-    threading.Thread(target=_watch_stdin_eof, daemon=True).start()
+def _register_engines() -> None:
+    """Construct every engine we can, and let the rest be merely unavailable.
+
+    No single engine may stop the sidecar from starting. A language whose
+    engine does not construct is simply absent from ENGINES_BY_LANGUAGE, so
+    /jobs/tts reports it exactly as it reports an unknown language.
+    """
     for lang in ("am", "ti", "om"):
         try:
             ENGINES_BY_LANGUAGE[lang] = MmsEngine(models.model_dir(lang), lang)
@@ -211,7 +213,25 @@ def main() -> int:
             # Absent models are normal before the first download; /tts reports
             # the missing language rather than the sidecar failing to start.
             log.info("MMS model for %s not present yet", lang)
+        except Exception as exc:  # noqa: BLE001 - one bad engine, not a dead app
+            # A corrupt model, an unreadable tokens file, a missing native
+            # library: diagnosable in the log, fatal only for this language.
+            log.warning(
+                "TTS engine for %s failed to load, so that language is "
+                "unavailable: %s: %s",
+                lang,
+                type(exc).__name__,
+                exc,
+            )
+
+
+def main() -> int:
+    if not _token:
+        _emit({"ready": False, "error": f"{TOKEN_ENV} not set"})
+        return 1
+    threading.Thread(target=_watch_stdin_eof, daemon=True).start()
     try:
+        _register_engines()
         asyncio.run(_serve())
     except Exception as exc:  # noqa: BLE001 - last-resort handshake on any failure
         _emit({"ready": False, "error": str(exc)})

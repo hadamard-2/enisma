@@ -7,13 +7,22 @@
 # uvicorn resolves its event-loop/protocol implementations by dynamic import,
 # so those modules are listed as hidden imports to survive freezing.
 
+from PyInstaller.utils.hooks import collect_data_files
+
+# uroman loads ~3.9 MB of romanization tables from its own package directory at
+# construction time, and it does not raise when they are missing -- it logs one
+# line to stderr and romanizes nothing. Without these, a frozen build would
+# start cleanly and then fail every Ge'ez page with a message about the user's
+# text. hiddenimports carries .py modules only, hence this.
+uroman_data = collect_data_files('uroman')
+
 a = Analysis(
     ['server.py'],
     pathex=[],
     binaries=[],
     # The model manifest is read from disk beside server.py at runtime, so the
     # frozen binary has to carry it or every models.* call raises on load.
-    datas=[('models.json', '.')],
+    datas=[('models.json', '.')] + uroman_data,
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops.auto',

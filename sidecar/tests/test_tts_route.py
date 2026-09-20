@@ -85,3 +85,27 @@ def test_a_cancelled_job_stops_and_says_so(monkeypatch, tmp_path):
     assert client.delete(f"/jobs/{job_id}", headers=AUTH).status_code == 200
     snap = _await_terminal(client, job_id)
     assert snap["state"] == "cancelled"
+
+
+def test_one_engine_failing_to_construct_does_not_stop_the_others(monkeypatch):
+    """A bad engine costs its own language, never the whole sidecar.
+
+    Anything other than a missing model -- a corrupt model.onnx, an unreadable
+    tokens.txt, a native library that will not load -- used to escape the
+    registration loop and kill the process before it could emit a handshake,
+    which the Rust supervisor reads as a failed start and retries forever.
+    """
+    monkeypatch.setattr(server, "ENGINES_BY_LANGUAGE", {})
+    monkeypatch.setattr(server.models, "model_dir", lambda lang: f"/nowhere/{lang}")
+
+    def fake_engine(model_dir, language):
+        if language == "ti":
+            raise RuntimeError("libonnxruntime.so: cannot open shared object file")
+        return FakeEngine()
+
+    monkeypatch.setattr(server, "MmsEngine", fake_engine)
+
+    server._register_engines()
+
+    assert "ti" not in server.ENGINES_BY_LANGUAGE
+    assert sorted(server.ENGINES_BY_LANGUAGE) == ["am", "om"]
