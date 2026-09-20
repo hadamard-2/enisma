@@ -28,18 +28,20 @@ uroman_data = collect_data_files('uroman')
 
 # --- native libraries -------------------------------------------------------
 
-# onnxruntime's own runtime. Note this resolves only to
-# libonnxruntime_providers_shared.so: the main libonnxruntime.so.1.30.0 does not
-# match collect_dynamic_libs' `*.so` glob and is instead pulled in as a link
-# dependency of onnxruntime_pybind11_state, which the import graph does find.
+# onnxruntime's own runtime. This resolves only to
+# libonnxruntime_providers_shared.so, and that is correct: this wheel links ONNX
+# Runtime STATICALLY into onnxruntime_pybind11_state...so. Verified with
+# `readelf -d`, which lists no libonnxruntime among its NEEDED entries -- so
+# there is no separate libonnxruntime.so.1.30.0 to collect and none is needed.
+# Do not "restore" a collection of it; there is no such file to ship.
 onnxruntime_libs = collect_dynamic_libs('onnxruntime')
 
 # sherpa-onnx's C/C++ APIs and the libonnxruntime.so that sherpa-onnx-core
-# supplies. This is a DIFFERENT library from onnxruntime's above -- sherpa's
-# compiled extension links this one by soname and never imports it, so nothing
-# in the import graph reveals it. Both must ship; do not try to deduplicate
-# them. The destination (sherpa_onnx/lib) matters: the extension module lives
-# there too and finds its siblings beside it.
+# supplies. Sherpa's compiled extension reaches this one by soname through
+# $ORIGIN and never imports it, so nothing in the import graph reveals it and
+# only an explicit collection puts it in the bundle. The destination
+# (sherpa_onnx/lib) matters: the extension module lives there too and finds its
+# siblings beside it.
 sherpa_libs = collect_dynamic_libs('sherpa_onnx')
 
 # libespeak-ng.so, which espeakng_loader.get_library_path() ctypes-loads from

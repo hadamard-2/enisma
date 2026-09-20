@@ -34,11 +34,21 @@ On a fatal startup error it instead prints `{"ready": false, "error": "..."}` an
 
 Run uvicorn **in-process** (no `--reload`, no multiple workers). Those spawn child processes that a single `child.kill()` from the supervisor would orphan. The server is started programmatically from `server.py` precisely to keep it a single process.
 
-## Routes (M0)
+## Routes
 
-| Route | Auth | Response |
-| --- | --- | --- |
-| `GET /health` | Bearer | `{"status": "ok", "version": "0", "engines": {}}` |
+Every route takes the bearer token; a missing or wrong one is `401`.
+
+| Route | Response |
+| --- | --- |
+| `GET /health` | `{"status": "ok", "version": "0", "engines": {...}}` |
+| `POST /jobs/tts` | `{"jobId": "..."}` — returns immediately; poll `GET /jobs/{id}` for progress. |
+| `POST /jobs/fetch` | `{"jobId": "..."}` — a model download is an ordinary job, with no status or cancel route of its own. |
+| `GET /jobs/{id}` | `{"state", "progress", "sampleRate", "durationMs", "message"}`, or **404** for an unknown or pruned job. |
+| `DELETE /jobs/{id}` | The same snapshot shape `GET` returns, and the same **404** for an unknown or pruned job — so a caller writes one not-found branch, not two. |
+| `GET /models/status` | `{"languages": {"<lang>": bool}}` — true when every file for that language is present and its hash verifies. |
+| `GET /voices/{language}` | `{"voices": [...]}` — names for `en`; empty for the single-speaker MMS languages. |
+
+**`state` is the authoritative verdict on a job.** A *cancelled* job still reports a populated `sampleRate` and a non-zero `durationMs`, and leaves a truncated but structurally valid WAV at `out_path`. A client that branches on the data fields rather than on `state` will treat a truncated take as a success.
 
 ## Building the frozen binary
 
@@ -55,7 +65,7 @@ The TTS stacks reach most of what they need through filesystem paths rather than
 
 | Collected | Why it cannot be inferred |
 | --- | --- |
-| `sherpa_onnx/lib/*.so` (`collect_dynamic_libs`) | `libsherpa-onnx-c-api.so` and the compiled `_sherpa_onnx` extension both list `libonnxruntime.so` as a link-time `NEEDED` entry resolved through `$ORIGIN`. Nothing imports it, so only an explicit collection puts it in the bundle. This `libonnxruntime.so` comes from the `sherpa-onnx-core` package and is a **different library** from onnxruntime's own — both ship, and they must not be deduplicated. |
+| `sherpa_onnx/lib/*.so` (`collect_dynamic_libs`) | `libsherpa-onnx-c-api.so` and the compiled `_sherpa_onnx` extension both list `libonnxruntime.so` as a link-time `NEEDED` entry resolved through `$ORIGIN`. It is reached by `dlopen` at extension-load time, which PyInstaller's static analysis cannot see — **nothing imports it, so it must be collected explicitly** or it is simply absent from the bundle. |
 | `sherpa_onnx.lib._sherpa_onnx` (hidden import) | `sherpa_onnx/lib/` has no `__init__.py`, so it is a namespace package the analysis does not reliably walk into from the `sherpa_onnx` hidden import alone. |
 | `onnxruntime` (`collect_dynamic_libs`) | Resolves only to `libonnxruntime_providers_shared.so`. The main runtime is linked **statically** into `onnxruntime_pybind11_state…so` in this wheel — `objdump -p` shows no `libonnxruntime` among its `NEEDED` entries — so there is no `libonnxruntime.so.1.30.0` to collect and none is needed. |
 | `espeakng_loader` (data **and** dynamic libs) | `get_library_path()` ctypes-loads `libespeak-ng.so` from `Path(__file__).parent`, and `get_data_path()` returns `Path(__file__).parent / 'espeak-ng-data'` and raises if it is absent. Both have to land inside the frozen `espeakng_loader/` directory, which is why the libraries are collected with a package-relative destination rather than at the bundle root. |
