@@ -1,6 +1,6 @@
 # HearBook sidecar
 
-The offline inference sidecar for Enisma (internal name: HearBook). The Rust/Tauri core spawns and supervises this process; the React frontend never talks to it directly. As of **M0** it is just the harness — a FastAPI server with a single `/health` route. OCR (docling) and TTS (kokoro-onnx / sherpa-onnx) engines land in later milestones.
+The offline inference sidecar for Enisma (internal name: HearBook). The Rust/Tauri core spawns and supervises this process; the React frontend never talks to it directly. It is a FastAPI server over loopback: the M0 harness (handshake, bearer token, `/health`) plus the M4 TTS routes — model acquisition, voices, and synthesis jobs. TTS runs English through Kokoro weights on `onnxruntime` (with `espeakng-loader` and `phonemizer` for grapheme-to-phoneme), and Amharic, Tigrigna and Oromo through MMS VITS models on `sherpa-onnx`. OCR is not here yet; it lands in a later milestone.
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ Every route takes the bearer token; a missing or wrong one is `401`.
 
 | Route | Response |
 | --- | --- |
-| `GET /health` | `{"status": "ok", "version": "0", "engines": {...}}` |
+| `GET /health` | `{"status": "ok", "version": "0", "engines": {"<lang>": true, ...}}` — `engines` holds exactly the languages whose engine registered at startup. Registration is non-fatal, so an absent or unloadable model drops its language from this map rather than stopping the sidecar. |
 | `POST /jobs/tts` | `{"jobId": "..."}` — returns immediately; poll `GET /jobs/{id}` for progress. |
 | `POST /jobs/fetch` | `{"jobId": "..."}` — a model download is an ordinary job, with no status or cancel route of its own. |
 | `GET /jobs/{id}` | `{"state", "progress", "sampleRate", "durationMs", "message"}`, or **404** for an unknown or pruned job. |

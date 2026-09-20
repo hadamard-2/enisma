@@ -65,6 +65,27 @@ def test_an_unknown_language_reports_an_error_job(monkeypatch, tmp_path):
     assert "xx" in snap["message"]
 
 
+def test_health_names_the_languages_whose_engines_registered(monkeypatch):
+    # Registration is non-fatal: a language whose model is missing or corrupt
+    # is simply absent. /health is the only place a client can see that, so
+    # the map has to reflect the registry rather than a fixed shape.
+    monkeypatch.setattr(server, "_token", "test-token")
+    monkeypatch.setattr(
+        server, "ENGINES_BY_LANGUAGE", {"en": FakeEngine(), "am": FakeEngine()}
+    )
+    body = TestClient(server.app).get("/health", headers=AUTH).json()
+    assert body["status"] == "ok"
+    assert body["version"] == "0"
+    assert body["engines"] == {"en": True, "am": True}
+
+
+def test_health_reports_no_engines_when_none_registered(monkeypatch):
+    monkeypatch.setattr(server, "_token", "test-token")
+    monkeypatch.setattr(server, "ENGINES_BY_LANGUAGE", {})
+    body = TestClient(server.app).get("/health", headers=AUTH).json()
+    assert body["engines"] == {}
+
+
 def test_polling_an_unknown_job_is_a_404(monkeypatch):
     client = _client(monkeypatch)
     assert client.get("/jobs/nope", headers=AUTH).status_code == 404

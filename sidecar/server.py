@@ -1,10 +1,19 @@
-"""HearBook/Enisma sidecar — M0 harness.
+"""HearBook/Enisma sidecar — offline inference over loopback.
 
-A minimal FastAPI server that the Rust/Tauri core spawns and supervises. It
-binds to an ephemeral loopback port, prints a one-line JSON handshake to stdout
-once it is actually listening, and serves a single token-guarded ``/health``
-route. No OCR/TTS engines yet — those land in later milestones. The empty
-``engines`` map in the health response is the forward-compatible slot they fill.
+A FastAPI server that the Rust/Tauri core spawns and supervises. It binds to an
+ephemeral loopback port, prints a one-line JSON handshake to stdout once it is
+actually listening, and serves token-guarded routes for health, model
+acquisition, voices and TTS jobs.
+
+TTS is here: English through Kokoro weights on ``onnxruntime`` (with
+``espeakng-loader`` + ``phonemizer`` for G2P), and Amharic, Tigrigna and Oromo
+through MMS VITS models on ``sherpa-onnx``. OCR is not — it lands in a later
+milestone.
+
+Engine registration is deliberately non-fatal: a language whose model is
+absent or unloadable is simply missing from ``ENGINES_BY_LANGUAGE``, and the
+``engines`` map in the health response is how a client learns which languages
+actually came up.
 
 See README.md for the full harness contract (env vars + handshake format).
 """
@@ -56,7 +65,18 @@ app = FastAPI(title="HearBook sidecar", version="0")
 
 @app.get("/health")
 def health(_: None = Depends(_require_token)) -> dict:
-    return {"status": "ok", "version": "0", "engines": {}}
+    """Liveness, plus which language engines actually registered.
+
+    Registration is non-fatal, so a corrupt model, an unreadable tokens file or
+    a permissions error removes a language quietly. Reporting the registered
+    set is the only way a client can learn that before spending a conversion
+    on it.
+    """
+    return {
+        "status": "ok",
+        "version": "0",
+        "engines": {lang: True for lang in ENGINES_BY_LANGUAGE},
+    }
 
 
 JOBS = JobRegistry()
