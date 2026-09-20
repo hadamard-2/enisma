@@ -18,6 +18,7 @@ import os
 import secrets
 import sys
 import threading
+from typing import Callable
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
@@ -25,6 +26,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 import models
+from engine_kokoro import KokoroEngine, list_voices
 from engine_mms import MmsEngine
 from jobs import Job, JobRegistry
 from tts import Engine
@@ -95,6 +97,14 @@ def _tts_work(req: TtsRequest):
 def start_tts(req: TtsRequest, _: None = Depends(_require_token)) -> dict:
     """Start synthesis and return at once. Poll GET /jobs/{id} for progress."""
     return {"jobId": JOBS.start(_tts_work(req))}
+
+
+@app.get("/voices/{language}")
+def voices(language: str, _: None = Depends(_require_token)) -> dict:
+    """Real voice names. Empty for the single-speaker MMS languages."""
+    if language != "en":
+        return {"voices": []}
+    return {"voices": list_voices(models.model_dir("en"))}
 
 
 @app.get("/models/status")
@@ -206,13 +216,19 @@ def _register_engines() -> None:
     engine does not construct is simply absent from ENGINES_BY_LANGUAGE, so
     /jobs/tts reports it exactly as it reports an unknown language.
     """
+    builders: dict[str, Callable[[], Engine]] = {
+        "en": lambda: KokoroEngine(models.model_dir("en")),
+    }
     for lang in ("am", "ti", "om"):
+        builders[lang] = lambda lang=lang: MmsEngine(models.model_dir(lang), lang)
+
+    for lang, build in builders.items():
         try:
-            ENGINES_BY_LANGUAGE[lang] = MmsEngine(models.model_dir(lang), lang)
+            ENGINES_BY_LANGUAGE[lang] = build()
         except FileNotFoundError:
             # Absent models are normal before the first download; /tts reports
             # the missing language rather than the sidecar failing to start.
-            log.info("MMS model for %s not present yet", lang)
+            log.info("TTS model for %s not present yet", lang)
         except Exception as exc:  # noqa: BLE001 - one bad engine, not a dead app
             # A corrupt model, an unreadable tokens file, a missing native
             # library: diagnosable in the log, fatal only for this language.
