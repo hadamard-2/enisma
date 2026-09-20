@@ -1,4 +1,4 @@
-from prepare import KOKORO_TOKEN_LIMIT, chunk_english, tokenize
+from prepare import KOKORO_STYLE_ROWS, KOKORO_TOKEN_LIMIT, chunk_english, tokenize
 
 VOCAB = {ch: i + 1 for i, ch in enumerate("abcdefghijklmnopqrstuvwxyz .,")}
 
@@ -76,4 +76,18 @@ def test_one_unbroken_token_run_still_respects_the_ceiling():
     chunks = chunk_english(unbroken, VOCAB, fake_phonemize)
     assert len(chunks) == 4
     assert all(len(c) <= KOKORO_TOKEN_LIMIT for c in chunks)
+    assert _spoken(_decode(chunks)) == _spoken(unbroken)
+
+
+def test_no_chunk_can_index_past_the_last_style_row():
+    # The regression: a run with no sentence punctuation, no commas and no
+    # spaces falls through to the raw-token path, which used to emit chunks of
+    # exactly 510 tokens. styles has rows 0..509, and the engine looks up
+    # styles[len(tokens)], so a 510-token chunk is an IndexError. 509 is the
+    # largest token count with a real style row. Asserted against the literal,
+    # not the constant, so moving the constant cannot move the goalposts.
+    assert KOKORO_STYLE_ROWS == 510
+    unbroken = "z" * (KOKORO_STYLE_ROWS * 2)
+    chunks = chunk_english(unbroken, VOCAB, fake_phonemize)
+    assert max(len(c) for c in chunks) <= 509
     assert _spoken(_decode(chunks)) == _spoken(unbroken)

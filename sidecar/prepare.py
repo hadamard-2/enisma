@@ -70,11 +70,15 @@ def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
     return _WHITESPACE.sub(" ", stripped).strip()
 
 
-# Kokoro's context is 512, and its style vector has exactly 510 rows indexed by
-# token count (each voices/*.bin is 510 x 1 x 256 float32). 510 is the usable
-# ceiling, and a page phonemizes to roughly 1586 tokens, so chunking is not
-# optional for English.
-KOKORO_TOKEN_LIMIT = 510
+# Kokoro's context is 512, and its style vector has exactly 510 ROWS, indexed by
+# the chunk's token count (each voices/*.bin is 510 x 1 x 256 float32). 510 is a
+# row COUNT, not a valid index: the rows are 0..509. The engine looks up
+# styles[len(tokens)], so a 510-token chunk would ask for row 510, which does
+# not exist. The largest token count that has a real style row is therefore 509,
+# and that -- not 510 -- is the chunk ceiling. Do not "restore" it to 510.
+# A page phonemizes to roughly 1586 tokens, so chunking is not optional here.
+KOKORO_STYLE_ROWS = 510
+KOKORO_TOKEN_LIMIT = KOKORO_STYLE_ROWS - 1
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _COMMA_SPLIT = re.compile(r"(?<=[,;:])\s*")
@@ -93,8 +97,8 @@ def _by_tokens(
 
     Only reached by a single unbroken run with no sentence, clause, or space
     boundary inside it. The seam will sound bad; losing the text would be
-    worse, and the 510 ceiling is a measured property of the style vector, so
-    it is the one thing that cannot bend.
+    worse, and the ceiling is a measured property of the style vector, so it is
+    the one thing that cannot bend.
     """
     tokens = tokenize(phonemize(piece), vocab)
     return [
