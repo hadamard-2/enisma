@@ -15,18 +15,25 @@ import {
   type PanelImperativeHandle,
 } from "react-resizable-panels";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
+  cancelConversion,
+  convertPage,
   getPage,
+  getPageAudio,
   getProject,
   savePageSourceText,
   savePageText,
   setPageDone,
   updateProject,
+  CONVERSION_CANCELLED,
+  type PageAudio,
   type PageMeta,
   type ProjectDetail,
 } from "@/lib/api";
 import { extractFromUrl } from "@/lib/extract-open";
 import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
+import type { LanguageCode } from "@/lib/languages";
 import { cn } from "@/lib/utils";
 import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
 import { useRegisterCommands } from "@/lib/app-commands";
@@ -166,9 +173,17 @@ function Editor({
   );
   const [title, setTitle] = useState(project.title);
   const [language, setLanguage] = useState<string>(project.language);
-  const initialVoice = (PLACEHOLDER_VOICES[project.language] ?? [])[0] ?? "";
-  const [voice, setVoice] = useState(initialVoice);
-  const [speed, setSpeed] = useState(1.0);
+  const voices = useMemo(
+    () => PLACEHOLDER_VOICES[language as LanguageCode] ?? [],
+    [language],
+  );
+  // `projects.voice`/`projects.rate` are the panel's remembered position, so a
+  // reopened project offers the same settings its stored take was made with —
+  // without which every page would open reporting itself out of date.
+  const [voice, setVoice] = useState(
+    project.voice ?? (PLACEHOLDER_VOICES[project.language] ?? [])[0] ?? "",
+  );
+  const [speed, setSpeed] = useState(project.rate);
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
@@ -435,11 +450,117 @@ function Editor({
     queueEdit(project.id, page, text);
   }, [text, project.id, activePage, queueEdit]);
 
+  // ---- Conversion ---------------------------------------------------------
+  // The stored take for the active page, as the backend last described it.
+  const [audio, setAudio] = useState<PageAudio | null>(null);
+  const [converting, setConverting] = useState(false);
+  // A stop has been *requested*. Not the same as stopped: the engine only
+  // reads the cancel flag between units of work, so this can last up to a
+  // minute, progress keeps arriving and is still truthful, and the conversion
+  // may even finish first. Only `convertPage` settling clears it.
+  const [cancelling, setCancelling] = useState(false);
+  const [progress, setProgress] = useState(0);
+  /** The engine's own words when a conversion failed; untranslated. */
+  const [convertError, setConvertError] = useState<string | null>(null);
+  // The page a running conversion belongs to. Cancel names a page, and Rust
+  // refuses to stop a job the named page does not own, so this must be the
+  // page the conversion was STARTED on, not whatever is on screen now.
+  const convertingPageRef = useRef<number | null>(null);
+
+  const hasText = text.trim().length > 0;
+
+  // Whatever is on screen is the truth about this page, so a take is reloaded
+  // whenever the settings it is judged against change, and whenever an edit
+  // lands (`saved` flipping back to true) — staleness is computed from the
+  // stored text hash, which only moves when a write does.
   useEffect(() => {
-    if (!playing) return;
-    const t = setTimeout(() => setPlaying(false), 4500);
-    return () => clearTimeout(t);
-  }, [playing]);
+    if (converting) return;
+    let cancelled = false;
+    getPageAudio(project.id, activePage, voice, speed).then(
+      (a) => {
+        if (!cancelled) setAudio(a);
+      },
+      (e: unknown) => {
+        console.error(e);
+        // Nothing is known about this page's audio, and claiming a take that
+        // may not exist would offer the user a play button over nothing.
+        if (!cancelled) setAudio(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, activePage, voice, speed, saved, converting]);
+
+  // A conversion is for one page, so a page change abandons its error and
+  // player position rather than showing them against the page now on screen.
+  useEffect(() => {
+    setConvertError(null);
+    setPlaying(false);
+  }, [activePage]);
+
+  useEffect(() => {
+    const unlisten = listen<{ projectId: string; pageNo: number; progress: number }>(
+      "tts://progress",
+      (e) => {
+        if (e.payload.projectId !== project.id) return;
+        if (e.payload.pageNo !== convertingPageRef.current) return;
+        setProgress(e.payload.progress);
+      },
+    );
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, [project.id]);
+
+  async function runConvert() {
+    if (converting) return;
+    const pageNo = activePage;
+    setConvertError(null);
+    setProgress(0);
+    setCancelling(false);
+    setPlaying(false);
+    convertingPageRef.current = pageNo;
+    setConverting(true);
+    try {
+      // The backend synthesizes the text it reads out of the database, so a
+      // keystroke still sitting out its debounce would be silently left out of
+      // the take. Flush it and wait for the write to actually land.
+      sendPending();
+      await writeChainRef.current.catch(() => {});
+      const a = await convertPage(project.id, pageNo, voice, speed);
+      // Reached even when a cancel was requested and lost the race: Rust keeps
+      // no memory of the request, so a take finished before the flag was read
+      // is a completed conversion, and is shown as one.
+      setAudio(a);
+    } catch (e: unknown) {
+      const message = String(e);
+      // A cancellation is an outcome the user asked for, not a failure. Every
+      // other rejection — including "another page is already being converted"
+      // — is surfaced, so nothing can fail silently.
+      if (message !== CONVERSION_CANCELLED) setConvertError(message);
+    } finally {
+      convertingPageRef.current = null;
+      setConverting(false);
+      setCancelling(false);
+      setProgress(0);
+    }
+  }
+
+  function requestCancel() {
+    const pageNo = convertingPageRef.current;
+    if (pageNo === null) return;
+    // Optimistic on purpose: the request is what the user performed, and the
+    // button has to stop inviting a second press immediately. The conversion
+    // itself is still running, and `runConvert`'s `finally` is what ends this.
+    setCancelling(true);
+    cancelConversion(project.id, pageNo).catch((e: unknown) => {
+      console.error(e);
+      // The stop was never delivered, so the conversion is not even trying to
+      // end. Offer the button back rather than sitting on "Stopping…".
+      setCancelling(false);
+    });
+  }
 
   const counts = useMemo(
     () => ({
@@ -467,6 +588,8 @@ function Editor({
   }
 
   function gotoPage(delta: number) {
+    // The shield below covers the mouse; this covers the arrow keys.
+    if (converting) return;
     const idx = visiblePages.findIndex((p) => p.pageNo === activePage);
     if (idx === -1) return;
     const nextIdx = Math.max(0, Math.min(visiblePages.length - 1, idx + delta));
@@ -621,20 +744,24 @@ function Editor({
               setLeftWidth(s.inPixels);
             }}
           >
-            <PagePanel
-              pages={pages}
-              filter={filter}
-              setFilter={setFilter}
-              active={activePage}
-              setActive={setActivePage}
-              counts={counts}
-            />
+            <div className="relative h-full">
+              <ConversionShield active={converting} />
+              <PagePanel
+                pages={pages}
+                filter={filter}
+                setFilter={setFilter}
+                active={activePage}
+                setActive={setActivePage}
+                counts={counts}
+              />
+            </div>
           </ResizablePanel>
 
           <ResizableHandle />
 
           <ResizablePanel id="center" defaultSize="52%" minSize="35%">
             <div className="relative h-full">
+              <ConversionShield active={converting} />
               <FloatingPagePill
                 page={activePage}
                 totalPages={pages.length}
@@ -677,18 +804,53 @@ function Editor({
                 setLanguage(l);
                 updateProject(project.id, { language: l }).catch(console.error);
               }}
+              voices={voices}
               voice={voice}
-              setVoice={setVoice}
+              setVoice={(v) => {
+                setVoice(v);
+                updateProject(project.id, { voice: v }).catch(console.error);
+              }}
               speed={speed}
-              setSpeed={setSpeed}
+              setSpeed={(n) => {
+                setSpeed(n);
+                updateProject(project.id, { rate: n }).catch(console.error);
+              }}
               playing={playing}
               setPlaying={setPlaying}
               page={activePage}
+              audio={audio}
+              hasText={hasText}
+              converting={converting}
+              cancelling={cancelling}
+              progress={progress}
+              convertError={convertError}
+              onConvert={runConvert}
+              onCancel={requestCancel}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
     </div>
+  );
+}
+
+/**
+ * Swallows clicks over a panel while a conversion runs.
+ *
+ * The backend synthesizes the text it reads from the database, so editing or
+ * paging away mid-conversion would produce a take of something other than what
+ * the user is looking at — and the take is filed against the page the
+ * conversion started on regardless. Blocking is cheaper to explain than
+ * reconciling that afterwards. Above the floating pill (z-20), so the page
+ * arrows are covered too.
+ */
+function ConversionShield({ active }: { active: boolean }) {
+  if (!active) return null;
+  return (
+    <div
+      aria-hidden
+      className="absolute inset-0 z-30 cursor-not-allowed bg-paper/40"
+    />
   );
 }
 

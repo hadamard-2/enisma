@@ -503,6 +503,38 @@
     "pause": {
       "message": "Durargii dhaabi",
       "context": "Replaces 'Play preview' while the sample audio is playing."
+    },
+    "convert": {
+      "message": "Gara sagaleetti jijjiiri",
+      "context": "Button that synthesizes the current page. Takes 40-100 seconds, so it is deliberately explicit rather than automatic."
+    },
+    "converting": {
+      "message": "Fuula {n} jijjiiraa jira…",
+      "context": "Shown while synthesis runs and the editor is blocked."
+    },
+    "cancel": {
+      "message": "Dhiisi",
+      "context": "Stops a conversion that is in progress."
+    },
+    "cancelling": {
+      "message": "Dhaabaa jira…",
+      "context": "Replaces the Cancel button after it is pressed. The engine only checks for a stop between chunks, so this can last up to a minute."
+    },
+    "stale": {
+      "message": "Kan yeroon isaa darbe",
+      "context": "Badge on the audio player meaning the audio was made before the current text or settings. The audio still plays."
+    },
+    "noText": {
+      "message": "Fuula kana irratti wanti dubbifamu hin jiru.",
+      "context": "Replaces the Convert button when the page has no text at all."
+    },
+    "convertError": {
+      "message": "Enisma fuula kana jijjiiruu hin dandeenye: {error}",
+      "context": "Shown when a conversion fails. {error} is the untranslated message from the engine."
+    },
+    "retry": {
+      "message": "Irra deebi'ii yaali",
+      "context": "Button beside a conversion error that starts the conversion over."
     }
   },
   "contentLanguage": {

@@ -503,6 +503,38 @@
     "pause": {
       "message": "ቅድመ ዕይታ ባለበት አቁም",
       "context": "Replaces 'Play preview' while the sample audio is playing."
+    },
+    "convert": {
+      "message": "ወደ ድምፅ ቀይር",
+      "context": "Button that synthesizes the current page. Takes 40-100 seconds, so it is deliberately explicit rather than automatic."
+    },
+    "converting": {
+      "message": "ገጽ {n}ን በመቀየር ላይ…",
+      "context": "Shown while synthesis runs and the editor is blocked."
+    },
+    "cancel": {
+      "message": "ተወው",
+      "context": "Stops a conversion that is in progress."
+    },
+    "cancelling": {
+      "message": "በማቆም ላይ…",
+      "context": "Replaces the Cancel button after it is pressed. The engine only checks for a stop between chunks, so this can last up to a minute."
+    },
+    "stale": {
+      "message": "ጊዜው ያለፈበት",
+      "context": "Badge on the audio player meaning the audio was made before the current text or settings. The audio still plays."
+    },
+    "noText": {
+      "message": "በዚህ ገጽ ላይ የሚነበብ ነገር የለም።",
+      "context": "Replaces the Convert button when the page has no text at all."
+    },
+    "convertError": {
+      "message": "Enisma ይህን ገጽ መቀየር አልቻለም፦ {error}",
+      "context": "Shown when a conversion fails. {error} is the untranslated message from the engine."
+    },
+    "retry": {
+      "message": "እንደገና ሞክር",
+      "context": "Button beside a conversion error that starts the conversion over."
     }
   },
   "contentLanguage": {

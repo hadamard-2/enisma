@@ -36,6 +36,16 @@ Also worth a look, lower priority: all three non-English `import.scannedWarning`
 | `deleteProject.confirm` | Delete | ሰርዝ | ደምስስ | Haqi |
 | `library.dropAccept` | Drop to import | ለማስገባት ጣል | ንምእታው ደርቢ | Galchuuf gadi darbi |
 | `library.dropReject` | Only PDF files can be imported | PDF ፋይሎች ብቻ ሊገቡ ይችላሉ | PDF ፋይላት ጥራይ ክኣትዋ ይኽእላ | Faayilii PDF qofatu galfamuu danda'a |
+| `ttsPanel.convert` | Convert to audio | ወደ ድምፅ ቀይር | ናብ ድምጺ ቀይር | Gara sagaleetti jijjiiri |
+| `ttsPanel.converting` | Converting page {n}… | ገጽ {n}ን በመቀየር ላይ… | ገጽ {n} ኣብ ምቕያር… | Fuula {n} jijjiiraa jira… |
+| `ttsPanel.cancel` | Cancel | ተወው | ሰርዝ | Dhiisi |
+| `ttsPanel.cancelling` | Stopping… | በማቆም ላይ… | ኣብ ምቁራጽ… | Dhaabaa jira… |
+| `ttsPanel.stale` | Out of date | ጊዜው ያለፈበት | ግዜኡ ዝሓለፈ | Kan yeroon isaa darbe |
+| `ttsPanel.noText` | Nothing to read on this page. | በዚህ ገጽ ላይ የሚነበብ ነገር የለም። | ኣብዚ ገጽ ዝንበብ የለን። | Fuula kana irratti wanti dubbifamu hin jiru. |
+| `ttsPanel.convertError` | Enisma could not convert this page: {error} | Enisma ይህን ገጽ መቀየር አልቻለም፦ {error} | Enisma ነዚ ገጽ ክቕይሮ ኣይከኣለን፦ {error} | Enisma fuula kana jijjiiruu hin dandeenye: {error} |
+| `ttsPanel.retry` | Try again | እንደገና ሞክር | ደጊምካ ፈትን | Irra deebi'ii yaali |
+
+The `ttsPanel.*` rows above came from the M4 text-to-speech panel and have not been through the automated review the M3 batch had. Two are worth a closer look: `ttsPanel.cancelling` ("Stopping…") describes a stop that has been *requested* but has not happened yet, and all three renderings may read as if it already has; and `ttsPanel.stale` is a badge in a tight space, so a shorter phrasing than Oromo's `Kan yeroon isaa darbe` would help if one exists. The `{error}` in `ttsPanel.convertError` is filled with an untranslated English message from the engine, by design.
 
 ## How to fix one
 

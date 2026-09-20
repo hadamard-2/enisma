@@ -77,3 +77,50 @@ export const readPdfBytes = async (path: string): Promise<Uint8Array> => {
   const bytes = await invoke<ArrayBuffer | number[]>("read_pdf_bytes_cmd", { path });
   return new Uint8Array(bytes);
 };
+
+export interface PageAudio {
+  /** Absolute path, already resolved by Rust; feed to convertFileSrc. */
+  path: string | null;
+  durationMs: number | null;
+  sampleRate: number | null;
+  /** No take, or one that no longer matches the text, voice and rate. */
+  stale: boolean;
+}
+
+/** What `convertPage` rejects with when the conversion was actually stopped. */
+export const CONVERSION_CANCELLED = "conversion cancelled";
+
+/**
+ * Synthesize one page. Slow — 40-100s — and resolves only when the job reaches
+ * a terminal state. Progress arrives meanwhile on the `tts://progress` event.
+ *
+ * Three rejections matter to the caller, and all three arrive as a plain
+ * English string: exactly `CONVERSION_CANCELLED` when a cancel actually won,
+ * a message beginning "another page is already being converted" when one is
+ * already running, and anything else for a real failure.
+ */
+export const convertPage = (
+  projectId: string,
+  pageNo: number,
+  voice: string,
+  rate: number,
+) => invoke<PageAudio>("convert_page_cmd", { projectId, pageNo, voice, rate });
+
+/**
+ * *Request* that the conversion running for this page stop. A no-op if none is.
+ *
+ * Resolving means the request was delivered, NOT that anything has stopped —
+ * the engine reads the flag between units of work, so the conversion can run
+ * on for up to a minute, and can even finish first, in which case `convertPage`
+ * resolves with a fresh take instead of rejecting. Only that promise settling
+ * ends the conversion.
+ */
+export const cancelConversion = (projectId: string, pageNo: number) =>
+  invoke<void>("cancel_conversion_cmd", { projectId, pageNo });
+
+export const getPageAudio = (
+  projectId: string,
+  pageNo: number,
+  voice: string,
+  rate: number,
+) => invoke<PageAudio>("get_page_audio_cmd", { projectId, pageNo, voice, rate });
