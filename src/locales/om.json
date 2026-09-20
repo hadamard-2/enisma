@@ -537,6 +537,68 @@
       "context": "Button beside a conversion error that starts the conversion over."
     }
   },
+  "modelPanel": {
+    "heading": {
+      "message": "Sagalee {language}",
+      "context": "Title of the card shown in place of the Convert button when this book's language has no usable voice model. {language} is a language name like 'Amharic'."
+    },
+    "missing": {
+      "message": "Kitaabni kun hanga sagaleen isaa ijaaramutti sagalee guddaan dubbifamuu hin danda'u — buufannaa {total}, yeroo tokko qofa barbaachisa.",
+      "context": "Explains why the page cannot be read aloud yet. {total} is a download size like '114 MB'. A full sentence."
+    },
+    "partial": {
+      "message": "{total} keessaa {already} duraan as jira. Itti fufuun bakka dhaabatetti fudhata.",
+      "context": "Shown when an earlier download stopped part-way. {already} and {total} are sizes like '43 MB' and '114 MB'. Reassures the user the rest is all that is left."
+    },
+    "unloadable": {
+      "message": "Sagaleen ni ijaarame garuu fe'amuu hin dandeenye. Irra deebi'anii ijaaruun yaalamuu qaba.",
+      "context": "Shown when the model files are all present and verified but the engine still failed to load them. Reinstalling is the only thing the user can usefully try."
+    },
+    "failed": {
+      "message": "Ijaaruun hin milkoofne: {error}",
+      "context": "Shown under the card when installing failed. {error} is an untranslated technical message from the backend, such as a checksum failure or the names of files a folder was missing."
+    },
+    "installing": {
+      "message": "Sagalee {language} ijaaraa jira…",
+      "context": "Shown while the voice model is downloading or being copied in. {language} is a language name."
+    },
+    "installingSize": {
+      "message": "Walumaagalatti {total}",
+      "context": "Small caption beside the progress bar giving the total download size, e.g. '114 MB in total'."
+    },
+    "download": {
+      "message": "Buufadhu",
+      "context": "Button that starts downloading this language's voice model."
+    },
+    "resume": {
+      "message": "Itti fufi",
+      "context": "Replaces 'Download' when an earlier download stopped part-way and will continue from there."
+    },
+    "retry": {
+      "message": "Irra deebi'ii yaali",
+      "context": "Replaces 'Download' after an install failed."
+    },
+    "reinstall": {
+      "message": "Irra deebi'ii ijaari",
+      "context": "Replaces 'Download' when the files are present but the engine could not load them."
+    },
+    "import": {
+      "message": "Faayilii irraa",
+      "context": "Button that opens a folder picker to install the voice model from files the user already has, instead of downloading."
+    },
+    "importTooltip": {
+      "message": "Faayilii duraan qabdu irraa ijaari — maashinii walqunnamtii hin qabneef.",
+      "context": "Tooltip on the 'From folder' button. Explains the offline route for a machine that cannot download."
+    },
+    "cancel": {
+      "message": "Dhiisi",
+      "context": "Stops an install in progress. What has already downloaded is kept, so resuming later does not start over."
+    },
+    "cancelling": {
+      "message": "Dhiisaa jira…",
+      "context": "Replaces 'Cancel' after it is pressed, while the install is still settling."
+    }
+  },
   "contentLanguage": {
     "en": {
       "message": "Ingiliffa",

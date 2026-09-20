@@ -50,3 +50,25 @@ The `ttsPanel.*` rows above came from the M4 text-to-speech panel and have not b
 ## How to fix one
 
 Edit the `message` field for the key in `src/locales/am.json`, `ti.json`, or `om.json` directly — leave `context`, `{placeholders}`, and the key structure untouched. `src/lib/i18n.test.ts` (`bun run test`) checks the four catalogues stay in step, so a typo'd or missing key fails the suite.
+
+## Voice model acquisition (added with the model download and import flow)
+
+Same caveat as everything above: written by Claude, not a native speaker. These carry more product-specific vocabulary than the earlier batches — *install*, *download*, *resume*, *folder* — and that is where a native read matters most, since a borrowed English term may read more naturally than a coined one.
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `modelPanel.heading` | {language} voice | የ{language} ድምጽ | ናይ {language} ድምጺ | Sagalee {language} |
+| `modelPanel.missing` | This book cannot be read aloud until its voice is installed — a {total} download, needed once. | የዚህ መጽሐፍ ድምጽ እስኪጫን ድረስ ጮክ ብሎ ሊነበብ አይችልም — {total} ማውረድ፣ አንድ ጊዜ ብቻ የሚያስፈልግ። | ናይዚ መጽሓፍ ድምጺ ክሳብ ዝጽዓን ዓው ኢሉ ክንበብ ኣይክእልን — {total} ምውራድ፣ ሓንሳብ ጥራይ ዘድሊ። | Kitaabni kun hanga sagaleen isaa ijaaramutti sagalee guddaan dubbifamuu hin danda'u — buufannaa {total}, yeroo tokko qofa barbaachisa. |
+| `modelPanel.partial` | {already} of {total} is already here. Resuming picks up where it stopped. | ከ{total} ውስጥ {already} አስቀድሞ አለ። መቀጠል ካቆመበት ይጀምራል። | ካብ {total} {already} ድሮ ኣሎ። ምቕጻል ካብ ዝጠጠወሉ ይጅምር። | {total} keessaa {already} duraan as jira. Itti fufuun bakka dhaabatetti fudhata. |
+| `modelPanel.unloadable` | The voice is installed but could not be loaded. Reinstalling it is worth a try. | ድምጹ ተጭኗል ነገር ግን ሊጫን አልቻለም። እንደገና መጫን መሞከር ተገቢ ነው። | ድምጺ ተጻዒኑ ኣሎ ግን ክጽዕን ኣይከኣለን። ደጊምካ ምጽዓን ክፍተን ይግባእ። | Sagaleen ni ijaarame garuu fe'amuu hin dandeenye. Irra deebi'anii ijaaruun yaalamuu qaba. |
+| `modelPanel.failed` | Installing failed: {error} | መጫን አልተሳካም፦ {error} | ምጽዓን ኣይተዓወተን፦ {error} | Ijaaruun hin milkoofne: {error} |
+| `modelPanel.installing` | Installing the {language} voice… | የ{language} ድምጽ በመጫን ላይ… | ናይ {language} ድምጺ ብምጽዓን… | Sagalee {language} ijaaraa jira… |
+| `modelPanel.installingSize` | {total} in total | በአጠቃላይ {total} | ብድምር {total} | Walumaagalatti {total} |
+| `modelPanel.download` | Download | አውርድ | ኣውርድ | Buufadhu |
+| `modelPanel.resume` | Resume | ቀጥል | ቀጽል | Itti fufi |
+| `modelPanel.retry` | Try again | እንደገና ሞክር | ደጊምካ ፈትን | Irra deebi'ii yaali |
+| `modelPanel.reinstall` | Reinstall | እንደገና ጫን | ደጊምካ ጸዓን | Irra deebi'ii ijaari |
+| `modelPanel.import` | From folder | ከአቃፊ | ካብ ፋይል ኣቃፊ | Faayilii irraa |
+| `modelPanel.importTooltip` | Install from a folder you already have — for a machine with no connection. | አስቀድመው ካለዎት አቃፊ ይጫኑ — ግንኙነት ለሌለው ማሽን። | ድሮ ካብ ዘለካ ኣቃፊ ጽዓን — ርክብ ንዘይብሉ ማሽን። | Faayilii duraan qabdu irraa ijaari — maashinii walqunnamtii hin qabneef. |
+| `modelPanel.cancel` | Cancel | ሰርዝ | ሰርዝ | Dhiisi |
+| `modelPanel.cancelling` | Cancelling… | በመሰረዝ ላይ… | ብምስራዝ… | Dhiisaa jira… |

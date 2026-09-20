@@ -537,6 +537,68 @@
       "context": "Button beside a conversion error that starts the conversion over."
     }
   },
+  "modelPanel": {
+    "heading": {
+      "message": "{language} voice",
+      "context": "Title of the card shown in place of the Convert button when this book's language has no usable voice model. {language} is a language name like 'Amharic'."
+    },
+    "missing": {
+      "message": "This book cannot be read aloud until its voice is installed — a {total} download, needed once.",
+      "context": "Explains why the page cannot be read aloud yet. {total} is a download size like '114 MB'. A full sentence."
+    },
+    "partial": {
+      "message": "{already} of {total} is already here. Resuming picks up where it stopped.",
+      "context": "Shown when an earlier download stopped part-way. {already} and {total} are sizes like '43 MB' and '114 MB'. Reassures the user the rest is all that is left."
+    },
+    "unloadable": {
+      "message": "The voice is installed but could not be loaded. Reinstalling it is worth a try.",
+      "context": "Shown when the model files are all present and verified but the engine still failed to load them. Reinstalling is the only thing the user can usefully try."
+    },
+    "failed": {
+      "message": "Installing failed: {error}",
+      "context": "Shown under the card when installing failed. {error} is an untranslated technical message from the backend, such as a checksum failure or the names of files a folder was missing."
+    },
+    "installing": {
+      "message": "Installing the {language} voice…",
+      "context": "Shown while the voice model is downloading or being copied in. {language} is a language name."
+    },
+    "installingSize": {
+      "message": "{total} in total",
+      "context": "Small caption beside the progress bar giving the total download size, e.g. '114 MB in total'."
+    },
+    "download": {
+      "message": "Download",
+      "context": "Button that starts downloading this language's voice model."
+    },
+    "resume": {
+      "message": "Resume",
+      "context": "Replaces 'Download' when an earlier download stopped part-way and will continue from there."
+    },
+    "retry": {
+      "message": "Try again",
+      "context": "Replaces 'Download' after an install failed."
+    },
+    "reinstall": {
+      "message": "Reinstall",
+      "context": "Replaces 'Download' when the files are present but the engine could not load them."
+    },
+    "import": {
+      "message": "From folder",
+      "context": "Button that opens a folder picker to install the voice model from files the user already has, instead of downloading."
+    },
+    "importTooltip": {
+      "message": "Install from a folder you already have — for a machine with no connection.",
+      "context": "Tooltip on the 'From folder' button. Explains the offline route for a machine that cannot download."
+    },
+    "cancel": {
+      "message": "Cancel",
+      "context": "Stops an install in progress. What has already downloaded is kept, so resuming later does not start over."
+    },
+    "cancelling": {
+      "message": "Cancelling…",
+      "context": "Replaces 'Cancel' after it is pressed, while the install is still settling."
+    }
+  },
   "contentLanguage": {
     "en": {
       "message": "English",

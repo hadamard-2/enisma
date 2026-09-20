@@ -537,6 +537,68 @@
       "context": "Button beside a conversion error that starts the conversion over."
     }
   },
+  "modelPanel": {
+    "heading": {
+      "message": "ናይ {language} ድምጺ",
+      "context": "Title of the card shown in place of the Convert button when this book's language has no usable voice model. {language} is a language name like 'Amharic'."
+    },
+    "missing": {
+      "message": "ናይዚ መጽሓፍ ድምጺ ክሳብ ዝጽዓን ዓው ኢሉ ክንበብ ኣይክእልን — {total} ምውራድ፣ ሓንሳብ ጥራይ ዘድሊ።",
+      "context": "Explains why the page cannot be read aloud yet. {total} is a download size like '114 MB'. A full sentence."
+    },
+    "partial": {
+      "message": "ካብ {total} {already} ድሮ ኣሎ። ምቕጻል ካብ ዝጠጠወሉ ይጅምር።",
+      "context": "Shown when an earlier download stopped part-way. {already} and {total} are sizes like '43 MB' and '114 MB'. Reassures the user the rest is all that is left."
+    },
+    "unloadable": {
+      "message": "ድምጺ ተጻዒኑ ኣሎ ግን ክጽዕን ኣይከኣለን። ደጊምካ ምጽዓን ክፍተን ይግባእ።",
+      "context": "Shown when the model files are all present and verified but the engine still failed to load them. Reinstalling is the only thing the user can usefully try."
+    },
+    "failed": {
+      "message": "ምጽዓን ኣይተዓወተን፦ {error}",
+      "context": "Shown under the card when installing failed. {error} is an untranslated technical message from the backend, such as a checksum failure or the names of files a folder was missing."
+    },
+    "installing": {
+      "message": "ናይ {language} ድምጺ ብምጽዓን…",
+      "context": "Shown while the voice model is downloading or being copied in. {language} is a language name."
+    },
+    "installingSize": {
+      "message": "ብድምር {total}",
+      "context": "Small caption beside the progress bar giving the total download size, e.g. '114 MB in total'."
+    },
+    "download": {
+      "message": "ኣውርድ",
+      "context": "Button that starts downloading this language's voice model."
+    },
+    "resume": {
+      "message": "ቀጽል",
+      "context": "Replaces 'Download' when an earlier download stopped part-way and will continue from there."
+    },
+    "retry": {
+      "message": "ደጊምካ ፈትን",
+      "context": "Replaces 'Download' after an install failed."
+    },
+    "reinstall": {
+      "message": "ደጊምካ ጸዓን",
+      "context": "Replaces 'Download' when the files are present but the engine could not load them."
+    },
+    "import": {
+      "message": "ካብ ፋይል ኣቃፊ",
+      "context": "Button that opens a folder picker to install the voice model from files the user already has, instead of downloading."
+    },
+    "importTooltip": {
+      "message": "ድሮ ካብ ዘለካ ኣቃፊ ጽዓን — ርክብ ንዘይብሉ ማሽን።",
+      "context": "Tooltip on the 'From folder' button. Explains the offline route for a machine that cannot download."
+    },
+    "cancel": {
+      "message": "ሰርዝ",
+      "context": "Stops an install in progress. What has already downloaded is kept, so resuming later does not start over."
+    },
+    "cancelling": {
+      "message": "ብምስራዝ…",
+      "context": "Replaces 'Cancel' after it is pressed, while the install is still settling."
+    }
+  },
   "contentLanguage": {
     "en": {
       "message": "እንግሊዘኛ",

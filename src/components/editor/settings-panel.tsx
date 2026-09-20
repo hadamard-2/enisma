@@ -14,7 +14,9 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { LANGUAGES, languageLabelKey } from "@/lib/languages";
 import { audioStateFor, formatDuration } from "@/lib/audio-state";
-import type { PageAudio } from "@/lib/api";
+import type { ModelPanelState } from "@/lib/model-state";
+import type { ModelStatus, PageAudio } from "@/lib/api";
+import { ModelPanel } from "./model-panel";
 
 /** How far the rewind and forward buttons jump, in seconds. */
 const SKIP_SECONDS = 10;
@@ -38,6 +40,7 @@ export function SettingsPanel({
   convertError,
   onConvert,
   onCancel,
+  model,
 }: {
   language: string;
   setLanguage: (l: string) => void;
@@ -62,6 +65,21 @@ export function SettingsPanel({
   convertError: string | null;
   onConvert: () => void;
   onCancel: () => void;
+  /**
+   * This language's voice model, and what can be done about it. Travels as one
+   * object rather than eight props because the panel only ever asks one
+   * question of it: is there a usable voice, and if not, what now.
+   */
+  model: {
+    state: ModelPanelState;
+    status: ModelStatus | null;
+    progress: number;
+    error: string | null;
+    cancelling: boolean;
+    onDownload: () => void;
+    onImport: () => void;
+    onCancel: () => void;
+  };
 }) {
   const { t } = useTranslation();
 
@@ -191,9 +209,26 @@ export function SettingsPanel({
         </div>
 
         {/* Stage one: ask for the audio. Conversion is never automatic — it
-            costs 40-100 seconds — so this is the panel's loudest control. */}
+            costs 40-100 seconds — so this is the panel's loudest control.
+
+            A language with no usable voice takes this slot instead of sitting
+            beside it: the user came here to hear the page, and installing the
+            model is simply the first half of that. A disabled Convert with the
+            reason elsewhere would leave them hunting for it. */}
         <div className="mb-3">
-          {state === "converting" ? (
+          {model.state !== "ready" ? (
+            <ModelPanel
+              state={model.state}
+              languageLabel={t(languageLabelKey(language))}
+              status={model.status}
+              progress={model.progress}
+              error={model.error}
+              cancelling={model.cancelling}
+              onDownload={model.onDownload}
+              onImport={model.onImport}
+              onCancel={model.onCancel}
+            />
+          ) : state === "converting" ? (
             <div className="rounded-xl border border-line bg-surface p-3.5 shadow-paper-sm">
               <div className="flex items-center gap-2 text-[13px] text-ink-2">
                 <AudioLines size={15} className="animate-pulse text-teal" />
