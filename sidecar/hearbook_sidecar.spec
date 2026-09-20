@@ -4,10 +4,20 @@
 # Output: dist/hearbook-sidecar  (use scripts/build-sidecar.sh to install it
 #         into src-tauri/binaries/ with the required -<target-triple> suffix).
 #
-# uvicorn resolves its event-loop/protocol implementations by dynamic import,
-# so those modules are listed as hidden imports to survive freezing.
+# Most of what follows is here because PyInstaller's static analysis cannot see
+# it: uvicorn resolves its event-loop/protocol implementations by dynamic
+# import, and the three TTS native stacks reach their shared libraries and data
+# tables through filesystem paths rather than through `import`. See the README
+# section "What the frozen binary carries" for why each entry earns its place.
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
+# --- data ------------------------------------------------------------------
+
+# espeak-ng's dictionaries and voice definitions. espeakng_loader.get_data_path()
+# returns `Path(__file__).parent / 'espeak-ng-data'` and raises if it is absent,
+# so this whole tree has to sit beside the frozen espeakng_loader package.
+espeak_data = collect_data_files('espeakng_loader')
 
 # uroman loads ~3.9 MB of romanization tables from its own package directory at
 # construction time, and it does not raise when they are missing -- it logs one
@@ -16,13 +26,33 @@ from PyInstaller.utils.hooks import collect_data_files
 # text. hiddenimports carries .py modules only, hence this.
 uroman_data = collect_data_files('uroman')
 
+# --- native libraries -------------------------------------------------------
+
+# onnxruntime's own runtime. Note this resolves only to
+# libonnxruntime_providers_shared.so: the main libonnxruntime.so.1.30.0 does not
+# match collect_dynamic_libs' `*.so` glob and is instead pulled in as a link
+# dependency of onnxruntime_pybind11_state, which the import graph does find.
+onnxruntime_libs = collect_dynamic_libs('onnxruntime')
+
+# sherpa-onnx's C/C++ APIs and the libonnxruntime.so that sherpa-onnx-core
+# supplies. This is a DIFFERENT library from onnxruntime's above -- sherpa's
+# compiled extension links this one by soname and never imports it, so nothing
+# in the import graph reveals it. Both must ship; do not try to deduplicate
+# them. The destination (sherpa_onnx/lib) matters: the extension module lives
+# there too and finds its siblings beside it.
+sherpa_libs = collect_dynamic_libs('sherpa_onnx')
+
+# libespeak-ng.so, which espeakng_loader.get_library_path() ctypes-loads from
+# its own package directory by name.
+espeak_libs = collect_dynamic_libs('espeakng_loader')
+
 a = Analysis(
     ['server.py'],
     pathex=[],
-    binaries=[],
+    binaries=[*onnxruntime_libs, *sherpa_libs, *espeak_libs],
     # The model manifest is read from disk beside server.py at runtime, so the
     # frozen binary has to carry it or every models.* call raises on load.
-    datas=[('models.json', '.')] + uroman_data,
+    datas=[('models.json', '.'), *espeak_data, *uroman_data],
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops.auto',
@@ -34,7 +64,13 @@ a = Analysis(
         # library loads and seconds of table building), so static analysis
         # cannot see them.
         'sherpa_onnx',
+        # sherpa_onnx/lib has no __init__.py, so the compiled extension behind
+        # `from sherpa_onnx.lib._sherpa_onnx import ...` sits in a namespace
+        # package the analysis does not always walk into.
+        'sherpa_onnx.lib._sherpa_onnx',
+        'onnxruntime',
         'uroman',
+        'num2words2',
     ],
     hookspath=[],
     hooksconfig={},

@@ -19,7 +19,27 @@ use tauri_plugin_shell::ShellExt;
 
 const TOKEN_ENV: &str = "HEARBOOK_SIDECAR_TOKEN";
 const HOST_ENV: &str = "HEARBOOK_SIDECAR_HOST";
+const MODELS_ENV: &str = "HEARBOOK_MODELS_DIR";
 const LOOPBACK: &str = "127.0.0.1";
+
+/// Subdirectory of the app data directory that holds the downloaded inference
+/// models, beside `enisma.db` and `projects/`.
+const MODELS_SUBDIR: &str = "models";
+
+/// Where the sidecar keeps its downloaded models. Rust owns every filesystem
+/// path in this app and the sidecar invents none; without this the sidecar
+/// falls back to a directory beside its own `__file__`, which under a onefile
+/// frozen build is PyInstaller's extraction directory — deleted on exit, so
+/// every launch would re-download hundreds of megabytes.
+fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join(MODELS_SUBDIR);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
 
 /// Give up restarting after this many consecutive *failed-to-start* attempts
 /// (a sidecar that ran healthy and later died does not count toward this).
@@ -252,6 +272,7 @@ fn build_command(
     Ok(command
         .env(TOKEN_ENV, token)
         .env(HOST_ENV, LOOPBACK)
+        .env(MODELS_ENV, models_dir(app)?.to_string_lossy().to_string())
         .env("PYTHONUNBUFFERED", "1"))
 }
 
