@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import secrets
 import sys
@@ -24,8 +25,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 import models
+from engine_mms import MmsEngine
 from jobs import Job, JobRegistry
 from tts import Engine
+
+log = logging.getLogger("sidecar")
 
 TOKEN_ENV = "HEARBOOK_SIDECAR_TOKEN"
 HOST_ENV = "HEARBOOK_SIDECAR_HOST"
@@ -200,6 +204,13 @@ def main() -> int:
         _emit({"ready": False, "error": f"{TOKEN_ENV} not set"})
         return 1
     threading.Thread(target=_watch_stdin_eof, daemon=True).start()
+    for lang in ("am", "ti", "om"):
+        try:
+            ENGINES_BY_LANGUAGE[lang] = MmsEngine(models.model_dir(lang), lang)
+        except FileNotFoundError:
+            # Absent models are normal before the first download; /tts reports
+            # the missing language rather than the sidecar failing to start.
+            log.info("MMS model for %s not present yet", lang)
     try:
         asyncio.run(_serve())
     except Exception as exc:  # noqa: BLE001 - last-resort handshake on any failure

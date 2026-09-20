@@ -21,6 +21,11 @@ a = Analysis(
         'uvicorn.protocols.http.auto',
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan.on',
+        # engine_mms imports these inside its constructor (they cost native
+        # library loads and seconds of table building), so static analysis
+        # cannot see them.
+        'sherpa_onnx',
+        'uroman',
     ],
     hookspath=[],
     hooksconfig={},
