@@ -16,6 +16,16 @@ dependencies = [
     # Ge'ez-language TTS: MMS VITS models, with uroman romanizing Ge'ez to the
     # Latin alphabet the models' symbol tables actually contain.
     "sherpa-onnx>=1.13.2",
+    # sherpa-onnx's wheel ships no ONNX Runtime of its own: its compiled
+    # extension (_sherpa_onnx*.so) links a bare libonnxruntime.so that nothing
+    # else on this list provides. sherpa-onnx-core is the companion package
+    # that supplies it (as sherpa_onnx/lib/libonnxruntime.so, separate from
+    # onnxruntime's own copy, so the two do not collide). Nothing in our
+    # source imports sherpa_onnx_core by name, so it looks unused — it is not;
+    # without it `import sherpa_onnx` fails with an ImportError at load time.
+    # Pinned to match sherpa-onnx's version: the two ship matched halves of
+    # one native library and must not drift apart.
+    "sherpa-onnx-core>=1.13.2,<1.14",
     "uroman>=1.3.1.1",
     # Number-to-words. TEMPORARY git pin: stock num2words2 returns Tigrigna in
     # its own Latin transliteration, which collides with uroman's romanization
