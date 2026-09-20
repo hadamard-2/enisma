@@ -38,7 +38,61 @@ pub fn job_for(active: &Option<ActiveJob>, project_id: &str, page_no: i64) -> Op
     active
         .as_ref()
         .filter(|j| j.project_id == project_id && j.page_no == page_no)
+        // The slot is claimed before the sidecar has issued a job id, so a
+        // cancel landing in that gap has nothing to name yet.
+        .filter(|j| !j.job_id.is_empty())
         .map(|j| j.job_id.clone())
+}
+
+/// What the user is told when a conversion is already running.
+pub const BUSY_MESSAGE: &str =
+    "another page is already being converted. Wait for it to finish, or cancel it first.";
+
+/// Exclusive hold on the single conversion slot, released on every exit path.
+///
+/// Releasing is `Drop`, not a statement at the end of the happy path: an early
+/// `?` on a failed job must not leave the slot occupied, or the app would
+/// refuse every later conversion until it is restarted.
+#[derive(Debug)]
+pub struct ConversionClaim<'a>(&'a Mutex<Option<ActiveJob>>);
+
+impl ConversionClaim<'_> {
+    /// Record the job id the sidecar issued, so a cancel can name it.
+    pub fn set_job_id(&self, job_id: &str) {
+        if let Some(job) = self.0.lock().unwrap().as_mut() {
+            job.job_id = job_id.to_string();
+        }
+    }
+}
+
+impl Drop for ConversionClaim<'_> {
+    fn drop(&mut self) {
+        *self.0.lock().unwrap() = None;
+    }
+}
+
+/// Take the conversion slot for this page, or refuse.
+///
+/// The check and the claim share one lock acquisition: testing the slot and
+/// then claiming it separately would reintroduce the very race this closes.
+/// Conversion is one page at a time by design, so a second start is an invalid
+/// state to refuse rather than a queue to build.
+pub fn claim<'a>(
+    slot: &'a Mutex<Option<ActiveJob>>,
+    project_id: &str,
+    page_no: i64,
+) -> Result<ConversionClaim<'a>, String> {
+    let mut guard = slot.lock().unwrap();
+    if guard.is_some() {
+        return Err(BUSY_MESSAGE.to_string());
+    }
+    *guard = Some(ActiveJob {
+        project_id: project_id.to_string(),
+        page_no,
+        job_id: String::new(),
+    });
+    drop(guard);
+    Ok(ConversionClaim(slot))
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -106,6 +160,10 @@ pub async fn convert_page_cmd(
     voice: String,
     rate: f64,
 ) -> Result<PageAudioDto, String> {
+    // Claimed before any work, so a second conversion is refused rather than
+    // silently overwriting the slot and stranding the first job's Cancel.
+    let _claim = claim(&active.0, &project_id, page_no)?;
+
     let (text, language) = {
         let conn = db.0.lock().unwrap();
         let text = effective_text(&conn, &project_id, page_no)?;
@@ -136,18 +194,11 @@ pub async fn convert_page_cmd(
         .ok_or("sidecar did not return a job id")?
         .to_string();
 
-    *active.0.lock().unwrap() = Some(ActiveJob {
-        project_id: project_id.clone(),
-        page_no,
-        job_id: job_id.clone(),
-    });
+    _claim.set_job_id(&job_id);
 
-    let outcome = poll_job(&app, &sidecar_state, &job_id, &project_id, page_no).await;
-
-    // Whatever happened, this page is no longer the one converting.
-    *active.0.lock().unwrap() = None;
-
-    let (sample_rate, duration_ms) = outcome?;
+    // `_claim` releases the slot when this function returns, however it returns.
+    let (sample_rate, duration_ms) =
+        poll_job(&app, &sidecar_state, &job_id, &project_id, page_no).await?;
 
     let conn = db.0.lock().unwrap();
     audio::set_page_audio(
@@ -351,5 +402,58 @@ mod tests {
     #[test]
     fn a_cancel_with_nothing_running_matches_nothing() {
         assert!(job_for(&None, "p1", 3).is_none());
+    }
+
+    #[test]
+    fn a_cancel_before_the_sidecar_issues_a_job_id_matches_nothing() {
+        let slot = Mutex::new(None);
+        let _claim = claim(&slot, "p1", 3).unwrap();
+        assert!(job_for(&slot.lock().unwrap(), "p1", 3).is_none());
+    }
+
+    #[test]
+    fn a_claim_names_the_job_once_the_sidecar_issues_an_id() {
+        let slot = Mutex::new(None);
+        let claimed = claim(&slot, "p1", 3).unwrap();
+        claimed.set_job_id("job-abc");
+        assert_eq!(
+            job_for(&slot.lock().unwrap(), "p1", 3).as_deref(),
+            Some("job-abc")
+        );
+    }
+
+    #[test]
+    fn a_second_conversion_is_refused_while_one_is_running() {
+        let slot = Mutex::new(None);
+        let _first = claim(&slot, "p1", 3).unwrap();
+        // A different page is refused too: the slot holds one conversion, not
+        // one per page.
+        assert_eq!(claim(&slot, "p1", 4).unwrap_err(), BUSY_MESSAGE);
+        assert_eq!(claim(&slot, "p2", 3).unwrap_err(), BUSY_MESSAGE);
+    }
+
+    #[test]
+    fn the_slot_is_released_when_a_conversion_ends() {
+        let slot = Mutex::new(None);
+        {
+            let _first = claim(&slot, "p1", 3).unwrap();
+        }
+        // Released, so the next page may convert. This is what proves a
+        // completed conversion does not wedge the app into permanent refusal.
+        let _second = claim(&slot, "p1", 4).expect("slot free after the first ended");
+    }
+
+    #[test]
+    fn the_slot_is_released_even_when_the_conversion_fails() {
+        fn failing(slot: &Mutex<Option<ActiveJob>>) -> Result<(), String> {
+            let _claim = claim(slot, "p1", 3)?;
+            // Stands in for a job that errors mid-poll: an early `?` return.
+            Err("synthesis failed".to_string())
+        }
+
+        let slot = Mutex::new(None);
+        assert_eq!(failing(&slot).unwrap_err(), "synthesis failed");
+        assert!(slot.lock().unwrap().is_none());
+        claim(&slot, "p1", 3).expect("slot free after a failure");
     }
 }
