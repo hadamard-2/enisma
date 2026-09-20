@@ -218,9 +218,13 @@ export function SettingsPanel({
           ) : (
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
+                {/* Offered for a page with no take, one whose take no longer
+                    matches, and one whose conversion failed. A take that is
+                    already current has nothing to gain from being remade, and
+                    would cost another 40-100 seconds to find that out. */}
                 <Button
                   onClick={onConvert}
-                  disabled={!hasText}
+                  disabled={!hasText || state === "fresh"}
                   className="flex-1"
                 >
                   {t(state === "error" ? "ttsPanel.retry" : "ttsPanel.convert")}
