@@ -77,11 +77,62 @@ def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
 KOKORO_TOKEN_LIMIT = 510
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_COMMA_SPLIT = re.compile(r"(?<=[,;:])\s*")
+_SPACE_SPLIT = re.compile(r"\s+")
 
 
 def tokenize(phonemes: str, vocab: dict[str, int]) -> list[int]:
     """Map phoneme characters to Kokoro's ids, dropping anything unmapped."""
     return [vocab[ch] for ch in phonemes if ch in vocab]
+
+
+def _by_tokens(
+    piece: str, vocab: dict[str, int], phonemize: Callable[[str], str]
+) -> list[list[int]]:
+    """Last resort: cut the token stream itself at the ceiling.
+
+    Only reached by a single unbroken run with no sentence, clause, or space
+    boundary inside it. The seam will sound bad; losing the text would be
+    worse, and the 510 ceiling is a measured property of the style vector, so
+    it is the one thing that cannot bend.
+    """
+    tokens = tokenize(phonemize(piece), vocab)
+    return [
+        tokens[i : i + KOKORO_TOKEN_LIMIT]
+        for i in range(0, len(tokens), KOKORO_TOKEN_LIMIT)
+    ]
+
+
+def _pack(
+    pieces: list[str],
+    vocab: dict[str, int],
+    phonemize: Callable[[str], str],
+    split_further: Callable[[str], list[list[int]]],
+) -> list[list[int]]:
+    """Greedily fill chunks with pieces, delegating any oversized piece.
+
+    A piece that does not fit even alone is handed to `split_further` rather
+    than truncated: no path here may drop text.
+    """
+    chunks: list[list[int]] = []
+    current = ""
+    for piece in pieces:
+        if not piece.strip():
+            continue
+        candidate = f"{current} {piece}".strip() if current else piece.strip()
+        if len(tokenize(phonemize(candidate), vocab)) > KOKORO_TOKEN_LIMIT:
+            if current:
+                chunks.append(tokenize(phonemize(current), vocab))
+                current = ""
+            if len(tokenize(phonemize(piece), vocab)) > KOKORO_TOKEN_LIMIT:
+                chunks.extend(split_further(piece))
+                continue
+            current = piece.strip()
+        else:
+            current = candidate
+    if current:
+        chunks.append(tokenize(phonemize(current), vocab))
+    return [c for c in chunks if c]
 
 
 def chunk_english(
@@ -93,24 +144,24 @@ def chunk_english(
 
     espeak-ng expands numbers itself during phonemization, so there is no
     number-to-words step on this path.
+
+    Boundaries get finer only as far as they have to: sentences, then clauses
+    (comma/semicolon/colon), then whitespace, then the raw token stream. Text
+    is never truncated -- the concatenation of the chunks carries every token
+    the input produced.
     """
     if not text.strip():
         return []
 
-    chunks: list[list[int]] = []
-    current = ""
-    for sentence in _SENTENCE_SPLIT.split(text.strip()):
-        if not sentence:
-            continue
-        candidate = f"{current} {sentence}".strip()
-        if len(tokenize(phonemize(candidate), vocab)) > KOKORO_TOKEN_LIMIT and current:
-            chunks.append(tokenize(phonemize(current), vocab))
-            current = sentence
-        else:
-            current = candidate
-    if current:
-        chunks.append(tokenize(phonemize(current), vocab))
+    def by_space(piece: str) -> list[list[int]]:
+        return _pack(
+            _SPACE_SPLIT.split(piece),
+            vocab,
+            phonemize,
+            lambda p: _by_tokens(p, vocab, phonemize),
+        )
 
-    # A single sentence can still exceed the limit on its own; the style vector
-    # simply has no row beyond 510, so it is truncated rather than rejected.
-    return [c[:KOKORO_TOKEN_LIMIT] for c in chunks if c]
+    def by_clause(piece: str) -> list[list[int]]:
+        return _pack(_COMMA_SPLIT.split(piece), vocab, phonemize, by_space)
+
+    return _pack(_SENTENCE_SPLIT.split(text.strip()), vocab, phonemize, by_clause)
