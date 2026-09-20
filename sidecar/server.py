@@ -147,7 +147,7 @@ class ImportRequest(BaseModel):
     source_dir: str
 
 
-def _acquisition_work(acquire):
+def _acquisition_work(acquire, language: str):
     """Wrap a model acquisition as a job, absorbing a cancel into a clean stop.
 
     `models` signals a cancel by raising, because it has to unwind out of a
@@ -165,6 +165,13 @@ def _acquisition_work(acquire):
             acquire(on_progress, lambda: not job.cancel.is_set())
         except models.Cancelled:
             return
+        # A model that just arrived is useless until its engine exists, and
+        # engines are otherwise built once at startup — so without this the
+        # user downloads 114 MB and is told the language is still unavailable
+        # until they restart the app. Non-fatal for the same reason startup
+        # registration is: the files are installed either way, and /health is
+        # where a client learns whether the engine actually came up.
+        register_language(language)
 
     return work
 
@@ -183,7 +190,8 @@ def start_fetch(req: FetchRequest, _: None = Depends(_require_token)) -> dict:
             _acquisition_work(
                 lambda on_progress, keep_going: models.fetch(
                     req.language, on_progress, keep_going
-                )
+                ),
+                req.language,
             )
         )
     }
@@ -204,7 +212,8 @@ def start_import(req: ImportRequest, _: None = Depends(_require_token)) -> dict:
             _acquisition_work(
                 lambda on_progress, keep_going: models.install_from_dir(
                     req.language, req.source_dir, on_progress, keep_going
-                )
+                ),
+                req.language,
             )
         )
     }
@@ -281,6 +290,45 @@ async def _serve() -> None:
     await serve_task
 
 
+def _builder(language: str) -> Callable[[], Engine] | None:
+    if language == "en":
+        return lambda: KokoroEngine(models.model_dir("en"))
+    if language in ("am", "ti", "om"):
+        return lambda: MmsEngine(models.model_dir(language), language)
+    return None
+
+
+def register_language(language: str) -> bool:
+    """Try to build one language's engine. Never raises.
+
+    Called at startup for every language, and again whenever a model arrives
+    mid-session. Returns whether the engine is now available, but the honest
+    answer for a client is the `engines` map in /health — this one is a
+    convenience for the caller standing right here.
+    """
+    build = _builder(language)
+    if build is None:
+        return False
+    try:
+        ENGINES_BY_LANGUAGE[language] = build()
+        return True
+    except FileNotFoundError:
+        # Absent models are normal before the first download; /tts reports the
+        # missing language rather than the sidecar failing to start.
+        log.info("TTS model for %s not present yet", language)
+    except Exception as exc:  # noqa: BLE001 - one bad engine, not a dead app
+        # A corrupt model, an unreadable tokens file, a missing native library:
+        # diagnosable in the log, fatal only for this language.
+        log.warning(
+            "TTS engine for %s failed to load, so that language is "
+            "unavailable: %s: %s",
+            language,
+            type(exc).__name__,
+            exc,
+        )
+    return False
+
+
 def _register_engines() -> None:
     """Construct every engine we can, and let the rest be merely unavailable.
 
@@ -288,29 +336,8 @@ def _register_engines() -> None:
     engine does not construct is simply absent from ENGINES_BY_LANGUAGE, so
     /jobs/tts reports it exactly as it reports an unknown language.
     """
-    builders: dict[str, Callable[[], Engine]] = {
-        "en": lambda: KokoroEngine(models.model_dir("en")),
-    }
-    for lang in ("am", "ti", "om"):
-        builders[lang] = lambda lang=lang: MmsEngine(models.model_dir(lang), lang)
-
-    for lang, build in builders.items():
-        try:
-            ENGINES_BY_LANGUAGE[lang] = build()
-        except FileNotFoundError:
-            # Absent models are normal before the first download; /tts reports
-            # the missing language rather than the sidecar failing to start.
-            log.info("TTS model for %s not present yet", lang)
-        except Exception as exc:  # noqa: BLE001 - one bad engine, not a dead app
-            # A corrupt model, an unreadable tokens file, a missing native
-            # library: diagnosable in the log, fatal only for this language.
-            log.warning(
-                "TTS engine for %s failed to load, so that language is "
-                "unavailable: %s: %s",
-                lang,
-                type(exc).__name__,
-                exc,
-            )
+    for lang in ("en", "am", "ti", "om"):
+        register_language(lang)
 
 
 def main() -> int:

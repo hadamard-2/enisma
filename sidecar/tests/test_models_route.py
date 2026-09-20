@@ -124,3 +124,33 @@ def test_a_failed_import_reports_the_reason_verbatim(monkeypatch):
 
     assert snap["state"] == "error"
     assert "model.onnx" in snap["message"]
+
+
+def test_a_finished_acquisition_brings_the_language_up_without_a_restart(monkeypatch):
+    # Engines are otherwise built once at startup, so without this the user
+    # downloads 114 MB and is told the language is still unavailable.
+    registered = []
+    monkeypatch.setattr(models, "fetch", lambda *a, **k: None)
+    monkeypatch.setattr(server, "register_language", lambda lang: registered.append(lang))
+    client = _client(monkeypatch)
+
+    job_id = client.post("/jobs/fetch", json={"language": "ti"}, headers=AUTH).json()["jobId"]
+    _await_terminal(client, job_id)
+
+    assert registered == ["ti"]
+
+
+def test_a_cancelled_acquisition_does_not_try_to_bring_the_language_up(monkeypatch):
+    registered = []
+
+    def fake_fetch(language, on_progress, should_continue=None):
+        raise models.Cancelled()
+
+    monkeypatch.setattr(models, "fetch", fake_fetch)
+    monkeypatch.setattr(server, "register_language", lambda lang: registered.append(lang))
+    client = _client(monkeypatch)
+
+    job_id = client.post("/jobs/fetch", json={"language": "ti"}, headers=AUTH).json()["jobId"]
+    _await_terminal(client, job_id)
+
+    assert registered == []
