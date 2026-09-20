@@ -29,11 +29,18 @@ uroman_data = collect_data_files('uroman')
 # --- native libraries -------------------------------------------------------
 
 # onnxruntime's own runtime. This resolves only to
-# libonnxruntime_providers_shared.so, and that is correct: this wheel links ONNX
-# Runtime STATICALLY into onnxruntime_pybind11_state...so. Verified with
-# `readelf -d`, which lists no libonnxruntime among its NEEDED entries -- so
-# there is no separate libonnxruntime.so.1.30.0 to collect and none is needed.
-# Do not "restore" a collection of it; there is no such file to ship.
+# libonnxruntime_providers_shared.so, and that is correct.
+#
+# The wheel DOES also contain onnxruntime/capi/libonnxruntime.so.1.30.0 (a real
+# 28 MB stripped ELF shared object -- an `ls` will find it). Nothing in the
+# wheel links to or loads it: `readelf -d` on
+# onnxruntime_pybind11_state...so lists no libonnxruntime among its NEEDED
+# entries, because this wheel links ONNX Runtime STATICALLY into that module,
+# and libonnxruntime_providers_shared.so does not need it either. It is dead
+# weight, so leaving it out costs nothing.
+#
+# Do not "restore" a collection of it. The reason to skip it is that nothing
+# uses it -- not that it is missing from the wheel.
 onnxruntime_libs = collect_dynamic_libs('onnxruntime')
 
 # sherpa-onnx's C/C++ APIs and the libonnxruntime.so that sherpa-onnx-core
