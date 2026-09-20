@@ -64,3 +64,26 @@ def test_prepare_strips_what_the_symbol_table_cannot_speak():
 def test_prepare_collapses_the_gaps_left_by_stripping():
     out = prepare_geez("ሓደ  ((  ነገር።", "ti", fake_romanize)
     assert "  " not in out
+
+
+def declining_romanize(text: str, lcode: str) -> str:
+    """uroman leaving a numeral run untouched, whatever its magnitude."""
+    return text
+
+
+def test_a_declined_single_digit_numeral_is_reported_not_crashed():
+    # ፩-፱ are str.isdigit() == True but not category Nd, so a bail-out testing
+    # isdigit() alone would fall into int() and raise ValueError instead.
+    with pytest.raises(RuntimeError):
+        expand_numbers("ምዕራፍ ፫፭", "am", declining_romanize)
+
+
+def test_a_declined_large_numeral_is_reported_not_crashed():
+    with pytest.raises(RuntimeError):
+        expand_numbers("ምዕራፍ ፼", "am", declining_romanize)
+
+
+def test_a_parsed_numeral_still_expands_when_romanize_returns_digits():
+    out = expand_numbers("ምዕራፍ ፫", "am", fake_romanize)
+    assert "፫" not in out
+    assert "ሦስት" in out

@@ -42,7 +42,12 @@ def expand_numbers(text: str, language: str, romanize: Romanize) -> str:
         # which is exactly where abugida 0.3.4 fails. Applied to the numeral
         # run alone, before the whole-text pass.
         value = romanize(match.group(), lcode).strip()
-        if not value.isdigit():
+        # int() consumes category Nd only, while str.isdigit() is also true for
+        # ፩-፱ themselves -- so an unchanged numeral run would pass a bare
+        # isdigit() check and crash in int(). Requiring ASCII narrows the test
+        # to exactly what int() can parse, and leaves the declined run intact
+        # for assert_no_digits to report.
+        if not value.isascii() or not value.isdigit():
             return match.group()
         return f" {num2words(int(value), lang=language)} "
 
