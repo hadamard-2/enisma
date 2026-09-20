@@ -129,6 +129,12 @@ def voices(language: str, _: None = Depends(_require_token)) -> dict:
 
 @app.get("/models/status")
 def models_status(_: None = Depends(_require_token)) -> dict:
+    """What each language has on disk, and what acquiring it would cost.
+
+    Cheap enough to call on demand — a full verify of all four languages is
+    well under a second — but it does hash every installed file, so it belongs
+    on a mount or after a job settles rather than on a timer.
+    """
     return {"languages": models.status()}
 
 
@@ -136,12 +142,29 @@ class FetchRequest(BaseModel):
     language: str
 
 
-def _fetch_work(req: FetchRequest):
+class ImportRequest(BaseModel):
+    language: str
+    source_dir: str
+
+
+def _acquisition_work(acquire):
+    """Wrap a model acquisition as a job, absorbing a cancel into a clean stop.
+
+    `models` signals a cancel by raising, because it has to unwind out of a
+    read loop; the registry decides `cancelled` from the flag and treats any
+    exception as an error. Catching it here is what reconciles the two — let it
+    escape and a download the user stopped on purpose would be reported as a
+    failure.
+    """
+
     def work(job: Job) -> None:
         def on_progress(path: str, fraction: float) -> None:
             job.progress = fraction
 
-        models.fetch(req.language, on_progress)
+        try:
+            acquire(on_progress, lambda: not job.cancel.is_set())
+        except models.Cancelled:
+            return
 
     return work
 
@@ -151,11 +174,40 @@ def start_fetch(req: FetchRequest, _: None = Depends(_require_token)) -> dict:
     """Start a model download. Poll GET /jobs/{id} exactly as for synthesis.
 
     There is no separate status or cancel route: a download is an ordinary job,
-    so GET /jobs/{id} and DELETE /jobs/{id} already serve it. `models.fetch`
-    does not yet read the cancel flag, so a download in flight runs to
-    completion; that is accepted for M4 and listed in the deferred set.
+    so GET /jobs/{id} and DELETE /jobs/{id} already serve it. Cancelling keeps
+    what has already been downloaded, and starting the same language again
+    resumes from there rather than from zero.
     """
-    return {"jobId": JOBS.start(_fetch_work(req))}
+    return {
+        "jobId": JOBS.start(
+            _acquisition_work(
+                lambda on_progress, keep_going: models.fetch(
+                    req.language, on_progress, keep_going
+                )
+            )
+        )
+    }
+
+
+@app.post("/jobs/import")
+def start_import(req: ImportRequest, _: None = Depends(_require_token)) -> dict:
+    """Install a language from a folder the user already has, as a job.
+
+    A job rather than a plain call because the source may be a slow stick and
+    the files run to hundreds of megabytes, so this needs the same progress and
+    cancellation a download gets. The files are checked against the same
+    manifest hashes, so a folder holding a different build is refused rather
+    than installed and left to fail at load time.
+    """
+    return {
+        "jobId": JOBS.start(
+            _acquisition_work(
+                lambda on_progress, keep_going: models.install_from_dir(
+                    req.language, req.source_dir, on_progress, keep_going
+                )
+            )
+        )
+    }
 
 
 @app.get("/jobs/{job_id}")
