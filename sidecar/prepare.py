@@ -68,3 +68,49 @@ def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
     # sentence boundaries that sherpa-onnx segments on.
     stripped = _UNSPEAKABLE.sub(" ", romanized)
     return _WHITESPACE.sub(" ", stripped).strip()
+
+
+# Kokoro's context is 512, and its style vector has exactly 510 rows indexed by
+# token count (each voices/*.bin is 510 x 1 x 256 float32). 510 is the usable
+# ceiling, and a page phonemizes to roughly 1586 tokens, so chunking is not
+# optional for English.
+KOKORO_TOKEN_LIMIT = 510
+
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def tokenize(phonemes: str, vocab: dict[str, int]) -> list[int]:
+    """Map phoneme characters to Kokoro's ids, dropping anything unmapped."""
+    return [vocab[ch] for ch in phonemes if ch in vocab]
+
+
+def chunk_english(
+    text: str,
+    vocab: dict[str, int],
+    phonemize: Callable[[str], str],
+) -> list[list[int]]:
+    """Split a page into sentence-aligned chunks that fit the context.
+
+    espeak-ng expands numbers itself during phonemization, so there is no
+    number-to-words step on this path.
+    """
+    if not text.strip():
+        return []
+
+    chunks: list[list[int]] = []
+    current = ""
+    for sentence in _SENTENCE_SPLIT.split(text.strip()):
+        if not sentence:
+            continue
+        candidate = f"{current} {sentence}".strip()
+        if len(tokenize(phonemize(candidate), vocab)) > KOKORO_TOKEN_LIMIT and current:
+            chunks.append(tokenize(phonemize(current), vocab))
+            current = sentence
+        else:
+            current = candidate
+    if current:
+        chunks.append(tokenize(phonemize(current), vocab))
+
+    # A single sentence can still exceed the limit on its own; the style vector
+    # simply has no row beyond 510, so it is truncated rather than rejected.
+    return [c[:KOKORO_TOKEN_LIMIT] for c in chunks if c]
