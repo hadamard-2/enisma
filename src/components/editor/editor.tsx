@@ -35,6 +35,7 @@ import {
 import { cancelAbandonedConversion } from "@/lib/audio-state";
 import { extractFromUrl } from "@/lib/extract-open";
 import { cn } from "@/lib/utils";
+import { reconcileVoice } from "@/lib/voice-selection";
 import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
 import { useRegisterCommands } from "@/lib/app-commands";
 import {
@@ -190,7 +191,9 @@ function Editor({
   // The voice list belongs to the language, so it is re-fetched on every
   // switch. An empty list is a normal state, not a failure: the single-speaker
   // Ge'ez languages have no voice to offer, and neither does English before
-  // its models finish downloading. The panel hides the field when it is empty.
+  // its models finish downloading. Those two are indistinguishable here, which
+  // is why `reconcileVoice` never lets an empty list clear a stored voice. The
+  // panel hides the field when the list is empty.
   useEffect(() => {
     let cancelled = false;
     listVoices(language)
@@ -199,10 +202,8 @@ function Editor({
         setVoices(list);
         // A selection carried over from another language must not survive the
         // switch - it would name a voice this language cannot speak with.
-        const next = list.includes(voiceRef.current)
-          ? voiceRef.current
-          : (list[0] ?? "");
-        if (next !== voiceRef.current) {
+        const { voice: next, persist } = reconcileVoice(list, voiceRef.current);
+        if (persist) {
           voiceRef.current = next;
           setVoice(next);
           updateProject(project.id, { voice: next }).catch(console.error);
