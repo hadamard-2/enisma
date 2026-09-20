@@ -508,7 +508,7 @@ function Editor({
   useEffect(() => {
     if (converting) return;
     let cancelled = false;
-    getPageAudio(project.id, activePage, voice, speed).then(
+    getPageAudio(project.id, activePage, language, voice, speed).then(
       (a) => {
         if (!cancelled) setAudio(a);
       },
@@ -522,7 +522,7 @@ function Editor({
     return () => {
       cancelled = true;
     };
-  }, [project.id, activePage, voice, speed, saved, converting]);
+  }, [project.id, activePage, language, voice, speed, saved, converting]);
 
   // A conversion is for one page, so a page change abandons its error and
   // player position rather than showing them against the page now on screen.

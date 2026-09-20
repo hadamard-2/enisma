@@ -44,6 +44,8 @@ ALTER TABLE pages ADD COLUMN audio_voice       TEXT;
 ALTER TABLE pages ADD COLUMN audio_rate        REAL;
 ALTER TABLE pages ADD COLUMN audio_sample_rate INTEGER;
 ALTER TABLE pages ADD COLUMN audio_duration_ms INTEGER;
+ALTER TABLE pages ADD COLUMN audio_language    TEXT;
+ALTER TABLE pages ADD COLUMN audio_created_at  INTEGER;
 "#;
 
 /// Apply pending migrations. Versioned with `PRAGMA user_version` so later
@@ -127,6 +129,8 @@ mod tests {
             "audio_rate",
             "audio_sample_rate",
             "audio_duration_ms",
+            "audio_language",
+            "audio_created_at",
         ] {
             assert!(cols.iter().any(|c| c == expected), "missing column {expected}");
         }

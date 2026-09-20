@@ -83,7 +83,13 @@ export interface PageAudio {
   path: string | null;
   durationMs: number | null;
   sampleRate: number | null;
-  /** No take, or one that no longer matches the text, voice and rate. */
+  /**
+   * When this take was recorded, epoch milliseconds, or null when there is no
+   * take. The audio path is deterministic per page, so this is what tells one
+   * take from the take that replaced it.
+   */
+  createdAt: number | null;
+  /** No take, or one that no longer matches the text, language, voice and rate. */
   stale: boolean;
 }
 
@@ -121,9 +127,11 @@ export const cancelConversion = (projectId: string, pageNo: number) =>
 export const getPageAudio = (
   projectId: string,
   pageNo: number,
+  language: string,
   voice: string,
   rate: number,
-) => invoke<PageAudio>("get_page_audio_cmd", { projectId, pageNo, voice, rate });
+) =>
+  invoke<PageAudio>("get_page_audio_cmd", { projectId, pageNo, language, voice, rate });
 
 /** Real voices for a language. Empty for the single-speaker MMS languages. */
 export const listVoices = (language: string) =>

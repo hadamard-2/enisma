@@ -74,7 +74,19 @@ export function SettingsPanel({
   });
 
   const path = audio?.path ?? null;
-  const src = path ? convertFileSrc(path) : null;
+  // The take's path is deterministic per page — one take per page by design —
+  // so a re-conversion writes new bytes behind a byte-identical URL. An
+  // <audio> element only reloads when its `src` attribute changes, so without
+  // a discriminator the player would keep serving the previous take while
+  // every label said the audio was current. `createdAt` moves on every
+  // conversion, which neither the duration nor the text hash does: identical
+  // text at the same voice and rate can yield the same duration, and a user
+  // who edits and then reverts lands back on the same hash. The asset
+  // protocol resolves the URI *path* only, so a query string is ignored by
+  // both the route and the scope check.
+  const src = path
+    ? `${convertFileSrc(path)}?v=${audio?.createdAt ?? 0}`
+    : null;
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [position, setPosition] = useState(0);
 

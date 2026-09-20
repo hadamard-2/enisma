@@ -102,6 +102,11 @@ pub struct PageAudioDto {
     pub path: Option<String>,
     pub duration_ms: Option<i64>,
     pub sample_rate: Option<i64>,
+    /// When this take was recorded, epoch milliseconds, or None when there is
+    /// no take. The webview hangs it off the audio URL so that a re-conversion
+    /// — which reuses the same deterministic path — still reads as a new
+    /// source and actually reloads.
+    pub created_at: Option<i64>,
     /// True when there is no take, or the take no longer matches the text and
     /// settings. A stale take is still playable — this only drives the badge.
     pub stale: bool,
@@ -122,6 +127,7 @@ pub fn page_audio_dto(
     conn: &Connection,
     project_id: &str,
     page_no: i64,
+    language: &str,
     voice: &str,
     rate: f64,
     data_dir: &Path,
@@ -129,7 +135,7 @@ pub fn page_audio_dto(
     let stored = audio::get_page_audio(conn, project_id, page_no).map_err(|e| e.to_string())?;
     // A page with no text can never be fresh, and must not blow up the panel.
     let current = effective_text(conn, project_id, page_no).unwrap_or_default();
-    let stale = !audio::is_fresh(&stored, &current, voice, rate);
+    let stale = !audio::is_fresh(&stored, &current, language, voice, rate);
     Ok(PageAudioDto {
         // Resolved against the data dir exactly as `get_project_cmd` resolves
         // `pdf_path`, so both land inside the one asset-protocol grant.
@@ -139,6 +145,7 @@ pub fn page_audio_dto(
             .map(|p| data_dir.join(p).to_string_lossy().into_owned()),
         duration_ms: stored.duration_ms,
         sample_rate: stored.sample_rate,
+        created_at: stored.created_at,
         stale,
     })
 }
@@ -266,13 +273,14 @@ pub async fn convert_page_cmd(
         page_no,
         &rel,
         &audio::text_hash(&text),
+        &language,
         &voice,
         rate,
         sample_rate,
         duration_ms,
     )
     .map_err(|e| e.to_string())?;
-    page_audio_dto(&conn, &project_id, page_no, &voice, rate, &data.0)
+    page_audio_dto(&conn, &project_id, page_no, &language, &voice, rate, &data.0)
 }
 
 /// Watch one job to a terminal state, emitting progress as it goes.
@@ -379,11 +387,12 @@ pub fn get_page_audio_cmd(
     data: State<'_, DataDir>,
     project_id: String,
     page_no: i64,
+    language: String,
     voice: String,
     rate: f64,
 ) -> Result<PageAudioDto, String> {
     let conn = db.0.lock().unwrap();
-    page_audio_dto(&conn, &project_id, page_no, &voice, rate, &data.0)
+    page_audio_dto(&conn, &project_id, page_no, &language, &voice, rate, &data.0)
 }
 
 #[cfg(test)]
@@ -430,19 +439,19 @@ mod tests {
         let id = seed(&mut conn);
         crate::audio::set_page_audio(
             &conn, &id, 1, "projects/p1/audio/page-1.wav",
-            &crate::audio::text_hash("extracted one"), "af_heart", 1.0, 24000, 4200,
+            &crate::audio::text_hash("extracted one"), "en", "af_heart", 1.0, 24000, 4200,
         )
         .unwrap();
 
         let fresh =
-            page_audio_dto(&conn, &id, 1, "af_heart", 1.0, std::path::Path::new("/data")).unwrap();
+            page_audio_dto(&conn, &id, 1, "en", "af_heart", 1.0, std::path::Path::new("/data")).unwrap();
         assert!(!fresh.stale);
         assert_eq!(fresh.duration_ms, Some(4200));
         assert!(fresh.path.unwrap().ends_with("projects/p1/audio/page-1.wav"));
 
         project::save_page_text(&conn, &id, 1, "corrected one").unwrap();
         let stale =
-            page_audio_dto(&conn, &id, 1, "af_heart", 1.0, std::path::Path::new("/data")).unwrap();
+            page_audio_dto(&conn, &id, 1, "en", "af_heart", 1.0, std::path::Path::new("/data")).unwrap();
         assert!(stale.stale);
         // Stale audio stays playable.
         assert!(stale.path.is_some());
@@ -453,7 +462,7 @@ mod tests {
         let mut conn = db::open_in_memory().unwrap();
         let id = seed(&mut conn);
         let dto =
-            page_audio_dto(&conn, &id, 1, "af_heart", 1.0, std::path::Path::new("/data")).unwrap();
+            page_audio_dto(&conn, &id, 1, "en", "af_heart", 1.0, std::path::Path::new("/data")).unwrap();
         assert!(dto.stale);
         assert!(dto.path.is_none());
     }
