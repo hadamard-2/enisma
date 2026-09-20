@@ -147,6 +147,59 @@ fn audio_rel_path(project_id: &str, page_no: i64) -> String {
     format!("projects/{project_id}/audio/page-{page_no}.wav")
 }
 
+/// The scratch file a conversion writes to before it has earned the final path.
+///
+/// The sidecar writes straight to the path it is handed, and a cancelled or
+/// failed run still writes the samples it had. Letting that land on the final
+/// path would destroy the previous good take while the database row still
+/// described it — the row saying 4200 ms over a clipped file, with no stale
+/// badge to warn anyone. So synthesis writes here, and only a `done` job
+/// renames into place.
+///
+/// Cleanup is `Drop`, not a statement on the failure paths: an early `?`
+/// anywhere between starting the job and the rename must not leave scratch
+/// files accumulating in the project's audio directory.
+#[derive(Debug)]
+pub struct TempOutput {
+    path: PathBuf,
+}
+
+impl TempOutput {
+    /// A scratch path beside the final one, so the rename stays within one
+    /// filesystem and is therefore atomic.
+    pub fn new(final_path: &Path) -> Self {
+        let mut name = final_path.file_name().unwrap_or_default().to_os_string();
+        name.push(".part");
+        Self {
+            path: final_path.with_file_name(name),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Move the finished take into place, replacing any previous one.
+    ///
+    /// The rename is atomic, so the final path never holds partial bytes: a
+    /// reader sees either the whole old take or the whole new one.
+    pub fn commit(self, final_path: &Path) -> Result<(), String> {
+        std::fs::rename(&self.path, final_path).map_err(|e| e.to_string())?;
+        // Renamed away: nothing left for Drop to remove.
+        std::mem::forget(self);
+        Ok(())
+    }
+}
+
+impl Drop for TempOutput {
+    fn drop(&mut self) {
+        // A scratch file that was never written is the normal case for a job
+        // that failed early, and a cleanup failure must not mask the real
+        // error already on its way out.
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn convert_page_cmd(
@@ -176,6 +229,8 @@ pub async fn convert_page_cmd(
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    // Synthesis writes here; only a finished job earns `out_path`.
+    let temp = TempOutput::new(&out_path);
 
     let started = sidecar::post_json(
         &sidecar_state,
@@ -185,7 +240,7 @@ pub async fn convert_page_cmd(
             "language": language,
             "voice": voice,
             "rate": rate,
-            "out_path": out_path.to_string_lossy(),
+            "out_path": temp.path().to_string_lossy(),
         }),
     )
     .await?;
@@ -199,6 +254,10 @@ pub async fn convert_page_cmd(
     // `_claim` releases the slot when this function returns, however it returns.
     let (sample_rate, duration_ms) =
         poll_job(&app, &sidecar_state, &job_id, &project_id, page_no).await?;
+
+    // The rename and the row write commit together, so the bytes at
+    // `out_path` and the row describing them can never disagree.
+    temp.commit(&out_path)?;
 
     let conn = db.0.lock().unwrap();
     audio::set_page_audio(
@@ -441,6 +500,76 @@ mod tests {
         // Released, so the next page may convert. This is what proves a
         // completed conversion does not wedge the app into permanent refusal.
         let _second = claim(&slot, "p1", 4).expect("slot free after the first ended");
+    }
+
+    /// A conversion's shape, minus the sidecar: write scratch bytes, then
+    /// either commit them or return early. `Ok` stands for a `done` job,
+    /// `Err` for the cancel and error branches of `poll_job`.
+    fn convert_into(final_path: &Path, bytes: &[u8], outcome: Result<(), String>) -> Result<(), String> {
+        let temp = TempOutput::new(final_path);
+        std::fs::write(temp.path(), bytes).unwrap();
+        outcome?;
+        temp.commit(final_path)
+    }
+
+    fn temp_audio_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("enisma-test-{name}"));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn temp_of(final_path: &Path) -> PathBuf {
+        TempOutput::new(final_path).path().to_path_buf()
+    }
+
+    #[test]
+    fn a_cancelled_conversion_leaves_the_previous_take_byte_identical() {
+        let dir = temp_audio_dir("convert-cancelled");
+        let final_path = dir.join("page-1.wav");
+        std::fs::write(&final_path, b"the good take").unwrap();
+
+        let err = convert_into(&final_path, b"clipped", Err("conversion cancelled".into()))
+            .unwrap_err();
+        assert_eq!(err, "conversion cancelled");
+        // The row still describes this take, so these bytes must still be it.
+        assert_eq!(std::fs::read(&final_path).unwrap(), b"the good take");
+        assert!(!temp_of(&final_path).exists(), "scratch file left behind");
+    }
+
+    #[test]
+    fn a_failed_conversion_leaves_the_previous_take_byte_identical() {
+        let dir = temp_audio_dir("convert-failed");
+        let final_path = dir.join("page-1.wav");
+        std::fs::write(&final_path, b"the good take").unwrap();
+
+        let err =
+            convert_into(&final_path, b"clipped", Err("synthesis failed".into())).unwrap_err();
+        assert_eq!(err, "synthesis failed");
+        assert_eq!(std::fs::read(&final_path).unwrap(), b"the good take");
+        assert!(!temp_of(&final_path).exists(), "scratch file left behind");
+    }
+
+    #[test]
+    fn a_finished_conversion_replaces_the_previous_take() {
+        let dir = temp_audio_dir("convert-done");
+        let final_path = dir.join("page-1.wav");
+        std::fs::write(&final_path, b"the old take").unwrap();
+
+        convert_into(&final_path, b"the new take", Ok(())).unwrap();
+        assert_eq!(std::fs::read(&final_path).unwrap(), b"the new take");
+        assert!(!temp_of(&final_path).exists(), "scratch file left behind");
+    }
+
+    #[test]
+    fn synthesis_never_writes_to_the_final_path() {
+        // The whole point of the scratch file: the sidecar is handed a path
+        // that is not the one the database row names.
+        let final_path = Path::new("/data/projects/p1/audio/page-1.wav");
+        let temp = TempOutput::new(final_path);
+        assert_ne!(temp.path(), final_path);
+        // Beside it, so the rename is a same-filesystem atomic move.
+        assert_eq!(temp.path().parent(), final_path.parent());
     }
 
     #[test]
