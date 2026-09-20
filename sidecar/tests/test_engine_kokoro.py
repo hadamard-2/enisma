@@ -75,3 +75,18 @@ def test_an_unknown_voice_is_rejected_by_name(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError) as exc:
         engine.synthesize("abc.", "no_such_voice", 1.0, str(tmp_path / "p.wav"), lambda f: True)
     assert "no_such_voice" in str(exc.value)
+
+
+def test_a_maximal_chunk_still_has_a_style_row(tmp_path, monkeypatch):
+    """The raw-token path packs chunks right up to the ceiling.
+
+    A run with no sentence, clause, or space boundary is cut by token count
+    alone, so it is the one path that produces chunks of exactly the ceiling
+    size. The engine looks up styles[len(tokens)] unclamped against the real
+    510 rows; a chunk one token too large is an IndexError, not a bad seam.
+    """
+    engine = _engine(tmp_path, monkeypatch)
+    engine.synthesize(
+        "abcdefgh" * 200, "af_heart", 1.0, str(tmp_path / "p.wav"), lambda f: True
+    )
+    assert engine._session.calls > 1

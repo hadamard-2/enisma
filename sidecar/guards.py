@@ -5,6 +5,8 @@ Both guards here exist because the thing they catch does not raise on its own.
 
 from __future__ import annotations
 
+import pathlib
+
 # espeak-ng keeps `path_home` in a fixed-size buffer and, when the data path it
 # is handed does not fit, silently falls back to the path compiled into the
 # library — which exists only on the machine that built the wheel. It then
@@ -14,12 +16,19 @@ from __future__ import annotations
 ESPEAK_PATH_LIMIT = 159
 
 def assert_espeak_data_path(path: str) -> None:
-    """Fail loudly before espeak-ng can fail silently."""
-    if len(path) > ESPEAK_PATH_LIMIT:
+    """Fail loudly before espeak-ng can fail silently.
+
+    Measures the resolved path, because that is the string espeak-ng is handed:
+    phonemizer resolves the path before passing it on, and a symlinked
+    component can make the resolved form longer than the one given here.
+    """
+    resolved = str(pathlib.Path(path).resolve())
+    if len(resolved) > ESPEAK_PATH_LIMIT:
         raise RuntimeError(
-            f"espeak-ng data path is {len(path)} characters; the limit is "
+            f"espeak-ng data path is {len(resolved)} characters; the limit is "
             f"{ESPEAK_PATH_LIMIT}. Stage the data at a shorter path — past the "
-            f"limit espeak-ng ignores it and terminates the process. Path: {path}"
+            f"limit espeak-ng ignores it and terminates the process. "
+            f"Path: {resolved}"
         )
 
 

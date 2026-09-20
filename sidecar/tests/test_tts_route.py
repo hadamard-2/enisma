@@ -109,3 +109,35 @@ def test_one_engine_failing_to_construct_does_not_stop_the_others(monkeypatch):
 
     assert "ti" not in server.ENGINES_BY_LANGUAGE
     assert sorted(server.ENGINES_BY_LANGUAGE) == ["am", "om"]
+
+
+def _voice_dir(tmp_path):
+    (tmp_path / "voices").mkdir()
+    for name in ("bm_george", "af_heart"):
+        (tmp_path / "voices" / f"{name}.bin").write_bytes(b"")
+    return tmp_path
+
+
+def test_listing_voices_requires_the_bearer_token(monkeypatch):
+    client = _client(monkeypatch)
+    assert client.get("/voices/en").status_code == 401
+
+
+def test_a_non_english_language_has_no_voices_to_choose(monkeypatch):
+    """MMS is single-speaker, so an empty list is the right answer, not a 404."""
+    client = _client(monkeypatch)
+    r = client.get("/voices/am", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json() == {"voices": []}
+
+
+def test_english_reports_the_voice_files_on_disk_sorted(monkeypatch, tmp_path):
+    """The route path and the "voices" key are the whole contract with the Rust
+    side's list_voices_cmd, which targets /voices/{language} by string."""
+    client = _client(monkeypatch)
+    monkeypatch.setattr(
+        server.models, "model_dir", lambda lang: str(_voice_dir(tmp_path))
+    )
+    r = client.get("/voices/en", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["voices"] == ["af_heart", "bm_george"]
