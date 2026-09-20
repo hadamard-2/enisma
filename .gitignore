@@ -28,3 +28,6 @@ dist-ssr
 
 # Superpowers SDD scratch
 .superpowers/
+
+# Downloaded TTS models (the dev default for HEARBOOK_MODELS_DIR)
+sidecar/models/

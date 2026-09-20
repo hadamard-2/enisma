@@ -23,6 +23,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+import models
 from jobs import Job, JobRegistry
 from tts import Engine
 
@@ -90,6 +91,37 @@ def _tts_work(req: TtsRequest):
 def start_tts(req: TtsRequest, _: None = Depends(_require_token)) -> dict:
     """Start synthesis and return at once. Poll GET /jobs/{id} for progress."""
     return {"jobId": JOBS.start(_tts_work(req))}
+
+
+@app.get("/models/status")
+def models_status(_: None = Depends(_require_token)) -> dict:
+    return {"languages": models.status()}
+
+
+class FetchRequest(BaseModel):
+    language: str
+
+
+def _fetch_work(req: FetchRequest):
+    def work(job: Job) -> None:
+        def on_progress(path: str, fraction: float) -> None:
+            job.progress = fraction
+
+        models.fetch(req.language, on_progress)
+
+    return work
+
+
+@app.post("/jobs/fetch")
+def start_fetch(req: FetchRequest, _: None = Depends(_require_token)) -> dict:
+    """Start a model download. Poll GET /jobs/{id} exactly as for synthesis.
+
+    There is no separate status or cancel route: a download is an ordinary job,
+    so GET /jobs/{id} and DELETE /jobs/{id} already serve it. `models.fetch`
+    does not yet read the cancel flag, so a download in flight runs to
+    completion; that is accepted for M4 and listed in the deferred set.
+    """
+    return {"jobId": JOBS.start(_fetch_work(req))}
 
 
 @app.get("/jobs/{job_id}")

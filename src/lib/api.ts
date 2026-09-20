@@ -124,3 +124,7 @@ export const getPageAudio = (
   voice: string,
   rate: number,
 ) => invoke<PageAudio>("get_page_audio_cmd", { projectId, pageNo, voice, rate });
+
+/** Real voices for a language. Empty for the single-speaker MMS languages. */
+export const listVoices = (language: string) =>
+  invoke<string[]>("list_voices_cmd", { language });

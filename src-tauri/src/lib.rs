@@ -57,6 +57,7 @@ pub fn run() {
             convert::convert_page_cmd,
             convert::cancel_conversion_cmd,
             convert::get_page_audio_cmd,
+            convert::list_voices_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

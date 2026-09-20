@@ -11,7 +11,9 @@ a = Analysis(
     ['server.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    # The model manifest is read from disk beside server.py at runtime, so the
+    # frozen binary has to carry it or every models.* call raises on load.
+    datas=[('models.json', '.')],
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops.auto',

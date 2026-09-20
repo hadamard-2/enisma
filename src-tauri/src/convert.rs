@@ -353,6 +353,26 @@ pub async fn cancel_conversion_cmd(
     }
 }
 
+/// The voices the engine for this language actually offers.
+///
+/// Empty for the single-speaker MMS languages, which is a legitimate answer
+/// rather than a failure: the caller shows no voice picker for them.
+#[tauri::command]
+pub async fn list_voices_cmd(
+    sidecar_state: State<'_, SidecarState>,
+    language: String,
+) -> Result<Vec<String>, String> {
+    let value = sidecar::get_json(&sidecar_state, &format!("/voices/{language}")).await?;
+    Ok(value["voices"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 #[tauri::command]
 pub fn get_page_audio_cmd(
     db: State<'_, Db>,
