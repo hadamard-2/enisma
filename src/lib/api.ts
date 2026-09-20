@@ -136,3 +136,56 @@ export const getPageAudio = (
 /** Real voices for a language. Empty for the single-speaker MMS languages. */
 export const listVoices = (language: string) =>
   invoke<string[]>("list_voices_cmd", { language });
+
+export interface ModelStatus {
+  language: string;
+  /** Every file present and hash-verified. Not the same as "can speak". */
+  present: boolean;
+  /** What this language costs in total, from the sidecar's own manifest. */
+  bytes: number;
+  installedBytes: number;
+  /**
+   * What an interrupted download left behind. Non-zero means asking again
+   * resumes from here rather than starting over, which is worth telling the
+   * user before they decide whether to retry.
+   */
+  partialBytes: number;
+}
+
+/**
+ * What each language has on disk and what getting it would cost.
+ *
+ * `present` answers "are the files here", NOT "can this language speak" — a
+ * model can verify and still fail to load. `sidecarHealth().engines` is the
+ * authority on the second question, and the panel needs both.
+ */
+export const modelStatus = () => invoke<ModelStatus[]>("model_status_cmd");
+
+/** What `acquireModel` rejects with when a cancel actually won. */
+export const MODEL_INSTALL_CANCELLED = "installation cancelled";
+
+/**
+ * Install one language's voice model, and resolve only when it is in place.
+ *
+ * Slow — hundreds of megabytes — and progress arrives meanwhile on the
+ * `models://progress` event. Pass `sourceDir` to copy from a folder the user
+ * already has instead of downloading; everything after that is identical.
+ *
+ * Rejects with exactly `MODEL_INSTALL_CANCELLED` when stopped, a message
+ * beginning "another voice model is already being installed" when one is, and
+ * the sidecar's own untranslated words for anything else — a checksum failure,
+ * or a folder that is missing files, which names them.
+ */
+export const acquireModel = (language: string, sourceDir?: string) =>
+  invoke<void>("acquire_model_cmd", { language, sourceDir: sourceDir ?? null });
+
+/**
+ * *Request* that the running installation for this language stop. A no-op if
+ * none is.
+ *
+ * Unlike cancelling a conversion this is cheap to act on and cheap to undo:
+ * the downloader checks between chunks, and what has already arrived is kept,
+ * so starting the same language again resumes rather than restarting.
+ */
+export const cancelModelAcquisition = (language: string) =>
+  invoke<void>("cancel_model_acquisition_cmd", { language });

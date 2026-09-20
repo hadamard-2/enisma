@@ -2,6 +2,7 @@ mod audio;
 mod convert;
 mod db;
 mod import;
+mod models;
 mod pdf;
 mod project;
 mod sidecar;
@@ -25,6 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState::new())
         .manage(convert::ActiveConversion::default())
+        .manage(models::ActiveAcquisition::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(data_dir.join("projects"))?;
@@ -58,6 +60,9 @@ pub fn run() {
             convert::cancel_conversion_cmd,
             convert::get_page_audio_cmd,
             convert::list_voices_cmd,
+            models::model_status_cmd,
+            models::acquire_model_cmd,
+            models::cancel_model_acquisition_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
