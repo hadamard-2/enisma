@@ -31,6 +31,7 @@ import {
   type PageMeta,
   type ProjectDetail,
 } from "@/lib/api";
+import { cancelAbandonedConversion } from "@/lib/audio-state";
 import { extractFromUrl } from "@/lib/extract-open";
 import { PLACEHOLDER_VOICES } from "@/lib/placeholder-voices";
 import type { LanguageCode } from "@/lib/languages";
@@ -510,6 +511,21 @@ function Editor({
     );
     return () => {
       void unlisten.then((f) => f());
+    };
+  }, [project.id]);
+
+  // Leaving the editor is the user saying they no longer want this take, and
+  // the conversion slot is app-wide: an unmount that issued no stop would
+  // block every other project until the abandoned job ran itself out. The
+  // page comes from the ref because cancel names the page the conversion was
+  // started on, which need not be the one on screen at unmount. Nothing here
+  // may touch state — the component is already gone.
+  useEffect(() => {
+    const projectId = project.id;
+    return () => {
+      cancelAbandonedConversion(convertingPageRef.current, (pageNo) =>
+        cancelConversion(projectId, pageNo),
+      );
     };
   }, [project.id]);
 

@@ -73,3 +73,30 @@ export function formatDuration(ms: number | null): string {
   const seconds = total % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
+
+/**
+ * Abandon a conversion the user is walking away from.
+ *
+ * Leaving the editor while a page is converting used to strand the backend's
+ * single conversion slot: the component unmounted, its handlers became
+ * no-ops, and nothing ever asked for a stop — so every project in the app
+ * refused to convert until the abandoned job finished on its own, advising
+ * the user to cancel something they no longer had any way to reach.
+ *
+ * Two things this deliberately does not do. It does not report failure:
+ * there is nobody left to tell, and the common case — a job that already
+ * finished and was pruned — is not even an error on the Rust side. And it
+ * does not make the wait vanish: cancellation is two-phase, so the slot stays
+ * claimed until the engine next reads the flag. It starts the stop, which is
+ * strictly sooner than letting the job run to completion.
+ *
+ * @param pageNo The page the conversion was STARTED on, or null when nothing
+ *   is in flight — in which case no call is made at all.
+ */
+export function cancelAbandonedConversion(
+  pageNo: number | null,
+  cancel: (pageNo: number) => Promise<unknown>,
+): void {
+  if (pageNo === null) return;
+  void cancel(pageNo).catch(() => {});
+}

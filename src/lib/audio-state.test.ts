@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { audioStateFor, formatDuration } from "./audio-state";
+import {
+  audioStateFor,
+  cancelAbandonedConversion,
+  formatDuration,
+} from "./audio-state";
 
 const base = { path: null, stale: true, converting: false, hasText: true };
 
@@ -92,5 +96,37 @@ describe("formatDuration", () => {
 
   it("carries past an hour into the minutes column", () => {
     expect(formatDuration(3_723_000)).toBe("62:03");
+  });
+});
+
+describe("cancelAbandonedConversion", () => {
+  it("cancels the page the conversion was started on", () => {
+    const calls: number[] = [];
+    cancelAbandonedConversion(3, (pageNo) => {
+      calls.push(pageNo);
+      return Promise.resolve();
+    });
+    expect(calls).toEqual([3]);
+  });
+
+  it("issues nothing when no conversion is in flight", () => {
+    const calls: number[] = [];
+    cancelAbandonedConversion(null, (pageNo) => {
+      calls.push(pageNo);
+      return Promise.resolve();
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("swallows a rejection, since the component is already gone", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: PromiseRejectionEvent) => unhandled.push(e.reason);
+    globalThis.addEventListener?.("unhandledrejection", onUnhandled);
+    expect(() =>
+      cancelAbandonedConversion(1, () => Promise.reject(new Error("gone"))),
+    ).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+    globalThis.removeEventListener?.("unhandledrejection", onUnhandled);
+    expect(unhandled).toEqual([]);
   });
 });
