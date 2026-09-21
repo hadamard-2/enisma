@@ -15,7 +15,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -116,6 +118,42 @@ def _always() -> bool:
     return True
 
 
+# The host advertises its limits per the IETF `RateLimit` draft, as
+# `"resolvers";r=0;t=148` — `t` being the seconds until the window resets.
+_RESET_SECONDS = re.compile(r"\bt=(\d+)")
+
+
+def rate_limit_wait(headers) -> int | None:
+    """Seconds until a rate limit clears, or None if the host did not say.
+
+    Reads the `RateLimit` header first and falls back to the older standard
+    `Retry-After`. Both are optional in practice, so every caller has to cope
+    with not being told.
+    """
+    raw = headers.get("RateLimit")
+    if raw:
+        match = _RESET_SECONDS.search(raw)
+        if match:
+            return int(match.group(1))
+    retry = (headers.get("Retry-After") or "").strip()
+    return int(retry) if retry.isdigit() else None
+
+
+def describe_wait(seconds: int | None) -> str:
+    """How long to wait, in words, for someone staring at a stalled download.
+
+    Rounded deliberately: the exact second is noise next to the decision the
+    reader is actually making, which is whether to wait or walk away. The 90s
+    boundary also keeps minutes plural, so there is no "1 minutes" to special
+    case.
+    """
+    if seconds is None:
+        return "Wait a few minutes and try again."
+    if seconds >= 90:
+        return f"Try again in about {round(seconds / 60)} minutes."
+    return f"Try again in about {max(seconds, 1)} seconds."
+
+
 def _install(part: Path, target: Path, sha256: str) -> None:
     """Promote a verified scratch file, or destroy it.
 
@@ -168,9 +206,26 @@ def fetch(
 
         # No cleanup handler: every exit but success deliberately leaves the
         # scratch file in place, because that is what the next attempt resumes
-        # from — a cancel and a dropped connection alike. Only a checksum
-        # failure destroys it, in `_install`.
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+        # from — a cancel, a rate limit and a dropped connection alike. Only a
+        # checksum failure destroys it, in `_install`.
+        try:
+            opened = urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS)
+        except urllib.error.HTTPError as err:
+            if err.code != 429:
+                raise
+            # Deliberately not retried here. The window is measured in
+            # minutes, and sleeping through it inside a several-hundred-
+            # megabyte download is indistinguishable from the stall the
+            # timeout above exists to prevent — so the user is told how long
+            # and left to decide, which they can afford to do because nothing
+            # already downloaded is lost.
+            raise RuntimeError(
+                "the model host is rate limiting this connection. "
+                f"{describe_wait(rate_limit_wait(err.headers))} "
+                "Nothing is lost — the download resumes where it stopped."
+            ) from err
+
+        with opened as response:
             # 206 means the server honoured the Range and is sending the
             # remainder. Anything else — a 200, or a file:// URL, which has no
             # status at all — is the whole file again, so the scratch file

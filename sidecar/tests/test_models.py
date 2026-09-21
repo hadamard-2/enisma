@@ -14,6 +14,7 @@ the one behaviour under test would never fire.
 import hashlib
 import http.server
 import threading
+import urllib.error
 
 import pytest
 
@@ -195,6 +196,118 @@ def _http_manifest(url: str, payload: bytes, sha256: str) -> dict:
         },
         "voices": {"names": []},
     }
+
+
+def _serve_status(code: int, headers: dict[str, str] | None = None):
+    """A loopback server that only ever fails, with the status asked for.
+
+    The 429 headers mirror the shape the real host sends —
+    `"resolvers";r=0;t=148` per the IETF RateLimit draft — so the parsing under
+    test is parsing the real format and not one invented here.
+    """
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(code)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    host, port = server.server_address[:2]
+    return f"http://{host}:{port}/thing.bin", server.shutdown
+
+
+def _serve_429(reset: str = '"resolvers";r=0;t=148'):
+    return _serve_status(429, {"RateLimit": reset})
+
+
+class _Headers(dict):
+    """Stands in for an HTTPError's headers, which look up case-insensitively."""
+
+    def get(self, key, default=None):
+        for k, v in self.items():
+            if k.lower() == key.lower():
+                return v
+        return default
+
+
+def test_the_reset_time_is_read_from_the_rate_limit_header():
+    assert models.rate_limit_wait(_Headers({"RateLimit": '"resolvers";r=0;t=148'})) == 148
+
+
+def test_the_reset_time_falls_back_to_retry_after():
+    assert models.rate_limit_wait(_Headers({"Retry-After": "90"})) == 90
+
+
+def test_a_host_that_says_nothing_gives_no_reset_time():
+    # Both headers are optional in practice, so every caller has to cope.
+    assert models.rate_limit_wait(_Headers({})) is None
+    assert models.rate_limit_wait(_Headers({"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})) is None
+
+
+def test_the_wait_is_described_for_someone_staring_at_a_stalled_download():
+    assert models.describe_wait(148) == "Try again in about 2 minutes."
+    assert models.describe_wait(20) == "Try again in about 20 seconds."
+    assert models.describe_wait(None) == "Wait a few minutes and try again."
+
+
+def test_a_rate_limited_download_says_how_long_to_wait(tmp_path, monkeypatch):
+    # Without this the job dies with a bare "HTTP Error 429: Too Many
+    # Requests", which tells the user neither what went wrong nor what to do.
+    url, stop = _serve_429()
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(url, b"x" * 10, "0" * 64))
+
+    try:
+        with pytest.raises(RuntimeError, match="about 2 minutes") as caught:
+            models.fetch("xx", lambda path, fraction: None)
+    finally:
+        stop()
+
+    assert "rate limiting" in str(caught.value)
+
+
+def test_a_rate_limit_keeps_what_has_already_been_downloaded(tmp_path, monkeypatch):
+    # The message promises the download resumes where it stopped, so the
+    # scratch file has to still be there for that to be true.
+    url, stop = _serve_429()
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(url, b"x" * 10, "0" * 64))
+
+    part = tmp_path / "models" / "xx" / "thing.bin.part"
+    part.parent.mkdir(parents=True, exist_ok=True)
+    part.write_bytes(b"already here")
+
+    try:
+        with pytest.raises(RuntimeError, match="rate limiting"):
+            models.fetch("xx", lambda path, fraction: None)
+    finally:
+        stop()
+
+    assert part.read_bytes() == b"already here"
+
+
+def test_a_non_429_http_error_is_not_dressed_up_as_a_rate_limit(tmp_path, monkeypatch):
+    # A 404 means the manifest points somewhere wrong, which is a different
+    # problem with a different fix; telling the user to wait would waste it.
+    url, stop = _serve_status(404)
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(url, b"x" * 10, "0" * 64))
+
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            models.fetch("xx", lambda path, fraction: None)
+    finally:
+        stop()
+
+    assert caught.value.code == 404
+    assert "rate limiting" not in str(caught.value)
 
 
 @pytest.fixture
