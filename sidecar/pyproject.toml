@@ -27,18 +27,20 @@ dependencies = [
     # one native library and must not drift apart.
     "sherpa-onnx-core>=1.13.2,<1.14",
     "uroman>=1.3.1.1",
-    # Number-to-words. TEMPORARY git pin: stock num2words2 returns Tigrigna in
-    # its own Latin transliteration, which collides with uroman's romanization
-    # of the surrounding words and produces audio a native speaker cannot
-    # follow. Fixed in this fork; a PR is open upstream. Revisit ~2026-09-24 —
-    # see the risk entry in docs/implementation-plan.md. Pinned by SHA, never
-    # by branch. Building this from git needs a Rust toolchain and takes about
-    # two minutes on a warm cargo cache.
+    # Number-to-words. TEMPORARY git pin: the released num2words2 on PyPI
+    # (1.0.20) returns Tigrigna in its own Latin transliteration, which
+    # collides with uroman's romanization of the surrounding words and
+    # produces audio a native speaker cannot follow. Fixed upstream and
+    # merged, but not yet released — so the pin tracks upstream main by SHA,
+    # never by branch. Drop it for a plain PyPI dependency as soon as a
+    # release >= 1.0.21 lands; see the risk entry in
+    # docs/implementation-plan.md. Building from git needs a Rust toolchain
+    # and takes about two minutes on a warm cargo cache.
     "num2words2",
 ]
 
 [tool.uv.sources]
-num2words2 = { git = "https://github.com/hadamard-2/num2words2", rev = "4fea55e128635ed75623e45e49405bafcdd1ace8" }
+num2words2 = { git = "https://github.com/gladiaio/num2words2", rev = "b3c82111c33a0a8f52450bfd6a57a0a327f0a02f" }
 
 [dependency-groups]
 dev = [

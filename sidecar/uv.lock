@@ -258,7 +258,7 @@ dev = [
 requires-dist = [
     { name = "espeakng-loader", specifier = ">=0.2.4" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "num2words2", git = "https://github.com/hadamard-2/num2words2?rev=4fea55e128635ed75623e45e49405bafcdd1ace8" },
+    { name = "num2words2", git = "https://github.com/gladiaio/num2words2?rev=b3c82111c33a0a8f52450bfd6a57a0a327f0a02f" },
     { name = "onnxruntime", specifier = ">=1.20.1" },
     { name = "phonemizer", specifier = ">=3.4.0" },
     { name = "sherpa-onnx", specifier = ">=1.13.2" },
@@ -384,7 +384,7 @@ wheels = [
 [[package]]
 name = "num2words2"
 version = "1.0.21"
-source = { git = "https://github.com/hadamard-2/num2words2?rev=4fea55e128635ed75623e45e49405bafcdd1ace8#4fea55e128635ed75623e45e49405bafcdd1ace8" }
+source = { git = "https://github.com/gladiaio/num2words2?rev=b3c82111c33a0a8f52450bfd6a57a0a327f0a02f#b3c82111c33a0a8f52450bfd6a57a0a327f0a02f" }
 
 [[package]]
 name = "numpy"
