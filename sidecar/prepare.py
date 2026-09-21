@@ -18,10 +18,26 @@ LCODE = {"am": "amh", "ti": "tir", "om": "orm"}
 # Ethiopic numerals: ፩-፼.
 _GEEZ_NUMERALS = re.compile(r"[፩-፼]+")
 _ARABIC_DIGITS = re.compile(r"\d+")
-# What the MMS character frontends actually contain, plus the sentence period
-# that segments utterances.
-_UNSPEAKABLE = re.compile(r"[^A-Za-z'\s.]+")
+# What the MMS character frontends actually contain, plus the three sentence
+# marks that segment utterances. sherpa-onnx splits on '.', '!', '?' and ':'
+# before it tokenizes, and drops the mark itself; every other punctuation
+# character is skipped outright, producing a token sequence byte-identical to
+# the one with no punctuation at all. So keeping a comma would buy nothing,
+# while keeping these buys a real utterance boundary.
+#
+# ':' is deliberately NOT kept even though it segments: uroman folds ፥ and ፦
+# onto it, but it is also the separator in times and ratios, where splitting
+# the sentence at it would be wrong.
+_UNSPEAKABLE = re.compile(r"[^A-Za-z'\s.!?]+")
 _WHITESPACE = re.compile(r"\s+")
+
+# None of the three tokens.txt files contains 'v' -- their alphabets are the 25
+# letters a-z minus v, plus a space. uroman happily emits it for the ቨ-series
+# (ቪዲዮ -> "vidiyo"), and because 'v' is a letter it survives _UNSPEAKABLE, so
+# without this fold it reaches the frontend and is skipped mid-word: "vidiyo"
+# is voiced as "idiyo". 'b' is the substitution Ethiopian speakers make for the
+# same sound, so folding is closer than deleting.
+_V_FOLD = str.maketrans({"v": "b", "V": "B"})
 
 Romanize = Callable[[str, str], str]
 
@@ -63,9 +79,11 @@ def expand_numbers(text: str, language: str, romanize: Romanize) -> str:
 def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
     """Full pipeline for the three MMS languages."""
     expanded = expand_numbers(text, language, romanize)
-    romanized = romanize(expanded, LCODE[language])
-    # uroman has already turned ። into '.', so keeping '.' preserves the Ge'ez
-    # sentence boundaries that sherpa-onnx segments on.
+    # uroman has already folded the Ge'ez marks onto ASCII -- ። to '.', ፧ to
+    # '?' -- so keeping those preserves the sentence boundaries sherpa-onnx
+    # segments on. ፣ and ፤ become ',' and ';', which segment nothing and are
+    # stripped below.
+    romanized = romanize(expanded, LCODE[language]).translate(_V_FOLD)
     stripped = _UNSPEAKABLE.sub(" ", romanized)
     return _WHITESPACE.sub(" ", stripped).strip()
 

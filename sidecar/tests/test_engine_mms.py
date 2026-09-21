@@ -90,10 +90,14 @@ def test_the_rate_is_passed_to_the_engine_as_speed(monkeypatch, tmp_path):
 def test_what_reaches_sherpa_is_latin_only_with_periods_kept(monkeypatch, tmp_path):
     """The whole Ge'ez path rests on this: prepared text inside MMS's symbols.
 
-    No digits and no punctuation beyond apostrophe and hyphen (the symbol table
-    has nothing to map them to), but the sentence periods survive -- they are
-    what sherpa-onnx segments utterances on, and hence what makes progress and
-    cancellation possible at all.
+    No digits, and no punctuation except the marks sherpa-onnx segments
+    utterances on -- '.', '!' and '?'. Segmentation is what makes progress and
+    cancellation possible at all, and it also keeps synthesis cost linear: one
+    unbroken run past a few thousand characters stops scaling.
+
+    'v' must not appear either. It is a letter, so it survives the symbol
+    strip, but no MMS tokens.txt contains it and the frontend would skip it
+    mid-word; prepare folds it onto 'b' before it can get here.
     """
     fake = FakeTts()
     engine = _engine(monkeypatch, fake)
@@ -103,12 +107,13 @@ def test_what_reaches_sherpa_is_latin_only_with_periods_kept(monkeypatch, tmp_pa
     # expansion that runs before romanization has something real to consume.
     engine._romanize = lambda text, lcode: text.replace("።", ".").replace("፪", "2")
     engine.synthesize(
-        "selam 3 neger። kalie, neger (፪)፤ new!",
+        "selam 3 neger። video kalie, neger (፪)፤ new! des neger?",
         "", 1.0, str(tmp_path / "p.wav"), lambda f: True,
     )
     sent = fake.last_text
-    assert "." in sent
+    assert "." in sent and "!" in sent and "?" in sent
     assert not any(ch.isdigit() for ch in sent)
+    assert "v" not in sent and "V" not in sent
     assert set(sent) <= set(
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'- ."
+        "abcdefghijklmnopqrstuwxyzABCDEFGHIJKLMNOPQRSTUWXYZ' .!?"
     ), sent

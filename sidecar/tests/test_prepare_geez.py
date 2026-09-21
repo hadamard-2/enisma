@@ -14,7 +14,12 @@ def fake_romanize(text: str, lcode: str) -> str:
         if text == "፲፱፻፹፭":
             return "1985"
         return "".join(GEEZ_DIGITS[ch] for ch in text)
-    return text.replace("።", ".")
+    # The Ge'ez-to-ASCII folds real uroman performs, measured against it:
+    # ። -> '.', ፧ -> '?', ፥ and ፦ -> ':', ፣ -> ',', ፤ -> ';'.
+    for geez, ascii_ in (("።", "."), ("፧", "?"), ("፥", ":"), ("፦", ":"),
+                         ("፣", ","), ("፤", ";")):
+        text = text.replace(geez, ascii_)
+    return text
 
 
 def test_arabic_digits_become_words():
@@ -87,3 +92,36 @@ def test_a_parsed_numeral_still_expands_when_romanize_returns_digits():
     out = expand_numbers("ምዕራፍ ፫", "am", fake_romanize)
     assert "፫" not in out
     assert "ሦስት" in out
+
+
+def test_prepare_keeps_the_marks_that_segment_utterances():
+    # '.', '!' and '?' are the marks sherpa-onnx splits on that we can keep
+    # unambiguously. Without them a page is one atomic call: no progress, no
+    # cancellation, and the synthesis cost stops being linear in page length.
+    out = prepare_geez("ሓደ ነገር። ካልእ ነገር፧ ሳልሳይ ነገር!", "ti", fake_romanize)
+    assert out.count(".") == 1
+    assert out.count("?") == 1
+    assert out.count("!") == 1
+
+
+def test_prepare_drops_the_colon_even_though_it_would_segment():
+    # uroman folds ፥ and ፦ onto ':', which sherpa-onnx does segment on -- but
+    # ':' also separates times and ratios, where a split would be wrong.
+    out = prepare_geez("ሰዓት 3፥ ነገር", "am", fake_romanize)
+    assert ":" not in out
+
+
+def test_prepare_still_drops_punctuation_that_segments_nothing():
+    # A comma is not merely unspoken: it yields a token sequence identical to
+    # the one with no comma, so keeping it would buy nothing at all.
+    out = prepare_geez("ሓደ ነገር፣ ካልእ ነገር፤ ሳልሳይ", "ti", fake_romanize)
+    assert "," not in out and ";" not in out
+
+
+def test_prepare_folds_v_onto_b_because_no_model_has_a_v():
+    # 'v' is absent from all three tokens.txt files but is a letter, so it
+    # survives the symbol strip and is then skipped mid-word by the frontend:
+    # "vidiyo" would be voiced as "idiyo".
+    out = prepare_geez("vidiyo Video", "am", fake_romanize)
+    assert "v" not in out and "V" not in out
+    assert "bidiyo" in out and "Bideo" in out
