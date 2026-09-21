@@ -91,6 +91,30 @@ Language → engine matrix:
 - The `tts_mms.py` engine is adapted directly from the reference `../amharic-speech-models/tts.py`: load VITS on CPU, romanize, strip characters outside the model vocab, return PCM. Generalize the hardcoded `amh` to a per-language model dir + `lcode`.
 - **Rate** maps to each engine's speed parameter. **Pitch is dropped** — neither Kokoro nor MMS/VITS exposes it natively and we won't fake it; the pitch slider is removed from the settings panel.
 
+#### Known limitation — the MMS languages cannot speak symbols (deferred past v0)
+
+The MMS symbol tables are Latin-letter only, so `prepare.py` strips everything outside `[A-Za-z'\s.]` **after** romanization. Two different failures come out of that, and neither is visible to the user today. Measured on this branch through the real `prepare_geez`:
+
+| page text | what the voice actually says |
+| --- | --- |
+| `ከተማይቱ 45% ሕዝብ አላት።` | `katamaayetu arebaa amesete hhezebe alaate.` — the `%` is gone |
+| `3 + 4 = 7 ነው።` | `sosete araate sabaate nawe.` — "three four seven" |
+| `ሙቀቱ 25°C ነው።` | `muqatu haayaa amesete C nawe.` — "twenty-five C" |
+| `ዋጋኡ $20 እዩ።` | `waagaau eseraa eyu.` — the `$` is gone |
+
+So `% + = × ÷ / $ € £ § ° µ` are **deleted in silence** — the audio is produced, sounds fine, and has a hole in it. Separately, any numeral `expand_numbers` cannot consume — `² ³ ½ ¼ ⁵ ① Ⅷ`, i.e. Unicode categories No and Nl — reaches `guards.assert_no_digits` and **aborts the page** with an error. `m²` is the case that surfaced this.
+
+Ordinary punctuation is unaffected in practice: uroman folds Ethiopic `፣ ፤ ፥ ፦ ፧` onto `, ; : : ?` and `።` onto `.`, so the sentence boundaries sherpa-onnx segments on survive and the rest is prosodic loss only.
+
+**English is not affected.** espeak-ng expands symbols before Kokoro sees them — measured: `25°C` → "twenty five degrees C", `45%` → "forty five percent", `3 + 4 = 7` → "three plus four equals seven", `$20` → "dollar twenty". Its worst case is a mispronunciation (`m²` → "em two"), not a deletion.
+
+Two candidate fixes, both deliberately out of v0:
+
+1. **Expand the substitution tables** in `prepare.py` with per-symbol words in each language (`m²` → `ካሬ ሜትር` / `ካሬ ሜተር` / `Kaaree meetira`). Needs a native-speaker-vetted translation per symbol per language, is unbounded, and silently mispronounces anything not yet in the table.
+2. **A pre-flight check** that classifies the page's characters before synthesis starts and asks the user to edit them — blocking ones gating Convert, silently-dropped ones warning. Needs no translations at all. Roughly a day of work: a `POST /text/inspect` route reusing the real pipeline (~43 ms per page, so live debounced checking is affordable), a Tauri command, and an inline message under the editor. A prototype classifier was validated against real uroman; the crux is the list of dropped characters considered benign, since `_UNSPEAKABLE` deletes a comma exactly as thoroughly as a percent sign and warning on both makes the feature unusable.
+
+(2) is the better route if this is picked up — it removes the translation bottleneck entirely.
+
 ### 4. PDF import & render
 
 - **Import:** Tauri dialog plugin to pick a PDF → copy into the project's app-data dir → create the `projects` row → kick off extraction.
@@ -188,9 +212,12 @@ No new screens. Hook points into existing components:
 - **English G2P / phonemizer bundling.** The Kokoro path needs a phonemizer bundled offline — recommended misaki + eSpeak-NG fallback (or the lighter built-in eSpeak-only tokenizer). Verify the exact misaki extras (`misaki[en]`, the heavier `trf=True` transformer variant vs `trf=False`) and that PyInstaller actually collects misaki's data files **and** the eSpeak-NG library + data. This is the English analogue of the `uroman` romanization risk, and adds to bundle size.
 - **Download robustness is itself a feature.** Large files over flaky networks is the failure mode that most hurts an offline-first app's first impression — it's why the download handler above is specced in detail rather than treated as a `curl`.
 - **Sample-rate mismatch** (Kokoro 24 kHz vs MMS 16 kHz) is avoided by single-language books, but the export/encode path should assert one rate per book.
+- **Deferred — symbols in the MMS languages.** `% + = ° $` and friends are silently deleted, and `² ½` and other non-Nd numerals abort the page. Out of v0 by decision; see the known-limitation note under §3 for the measurements and the two candidate fixes.
 - **Deferred — Ge'ez OCR.** Out of v0 by decision. Only revisit (and take on the Tesseract cross-platform bundling cost) if text-layer-less Amharic/Tigrigna PDFs turn out to be common in practice.
+- **Temporary — `num2words2` is pinned to upstream `main` by SHA (added 2026-09-20; merged upstream 2026-09-20; waiting on a release).** The released `num2words2` on PyPI returns Tigrinya numbers as its own Latin transliteration, which collides with uroman's romanization of the surrounding words and produced audio a native speaker could not follow. The fix was contributed by us, merged upstream as [`b3c8211`](https://github.com/gladiaio/num2words2/commit/b3c82111c33a0a8f52450bfd6a57a0a327f0a02f), and closes [issue #133](https://github.com/gladiaio/num2words2/issues/133) — but it is **not on PyPI yet**: the latest release is `v1.0.20` (2026-07-27) and upstream `main` has since bumped to `1.0.21`. Switching to PyPI before a new release would silently restore the broken behaviour. The pin therefore tracks `gladiaio/num2words2` **by commit SHA**, never by branch. **The trigger to remove it:** a release `>= 1.0.21` appears on PyPI — then delete the `[tool.uv.sources]` entry and depend on the version normally. Release cadence is irregular (v1.0.17 May 1, v1.0.18 Jul 17, v1.0.20 Jul 27), so this may sit for a while. **Do not leave the git pin longer than that:** `num2words2` is a maturin/PyO3 Rust extension, so a git dependency is compiled from source — measured at 5m 24s cold, 1m 59s warm — and needs a Rust toolchain wherever the sidecar's dependencies are installed, CI included.
 
 ## Out of scope (for now)
 
 - **Ge'ez-script OCR (Amharic/Tigrigna)** — text-layer-only in v0; no OCR fallback for these languages.
+- **Speaking symbols in Amharic/Tigrigna/Oromo** — no unit expansion and no pre-flight warning in v0; see §3.
 - M4B/chapters, multi-language books, cloud sync, voice cloning.
