@@ -115,6 +115,10 @@ pub struct ProjectDetail {
     /// Export chooses its own voice per export; this is only what the user
     /// last experimented with, and the default the export flow offers.
     pub voice: Option<String>,
+    /// The page this project was last left on, or None if it never has been.
+    /// Not validated against `page_count` here; the editor falls back when it
+    /// names a page that does not exist.
+    pub last_page: Option<i64>,
     pub pages: Vec<PageMeta>,
     /// How many pages have never been extracted (`source_text IS NULL`).
     /// Drives the editor's repair pass; `''` pages are extracted and do not
@@ -130,13 +134,18 @@ pub struct PageText {
 }
 
 pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetail> {
-    let (title, language, page_count, pdf_path, rate, voice, pages_missing_text) = conn
+    let (title, language, page_count, pdf_path, rate, voice, last_page, pages_missing_text) = conn
         .query_row(
-            "SELECT title, language, page_count, pdf_path, rate, voice,
+            "SELECT title, language, page_count, pdf_path, rate, voice, last_page,
                     (SELECT COUNT(*) FROM pages WHERE project_id = p.id AND source_text IS NULL)
              FROM projects p WHERE id = ?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            |r| {
+                Ok((
+                    r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
+                    r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?,
+                ))
+            },
         )?;
 
     let mut stmt = conn
@@ -158,9 +167,30 @@ pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetai
         pdf_path,
         rate,
         voice,
+        last_page,
         pages,
         pages_missing_text,
     })
+}
+
+/// Every page's text as the editor shows it: the user's edit where there is
+/// one, the extraction otherwise. What book-wide search looks through.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageBody {
+    pub page_no: i64,
+    pub text: String,
+}
+
+pub fn list_page_texts(conn: &Connection, project_id: &str) -> rusqlite::Result<Vec<PageBody>> {
+    let mut stmt = conn.prepare(
+        "SELECT page_no, COALESCE(edited_text, source_text, '')
+         FROM pages WHERE project_id = ?1 ORDER BY page_no",
+    )?;
+    let rows = stmt
+        .query_map([project_id], |r| Ok(PageBody { page_no: r.get(0)?, text: r.get(1)? }))?
+        .collect();
+    rows
 }
 
 pub fn get_page(conn: &Connection, project_id: &str, page_no: i64) -> rusqlite::Result<PageText> {
@@ -315,6 +345,23 @@ pub fn update_project(
         return Err(rusqlite::Error::QueryReturnedNoRows);
     }
     tx.commit()
+}
+
+/// Remember the page a project was left on.
+///
+/// Deliberately does NOT `touch` the project. `updated_at` orders the library
+/// and feeds its "edited 3 minutes ago" label, and paging through a book is
+/// reading it, not editing it — routing this through `update_project` would
+/// float a project to the top of the library for every arrow-key press.
+pub fn set_last_page(conn: &Connection, id: &str, page_no: i64) -> rusqlite::Result<()> {
+    let n = conn.execute(
+        "UPDATE projects SET last_page = ?2 WHERE id = ?1",
+        params![id, page_no],
+    )?;
+    if n == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    Ok(())
 }
 
 /// Bump `updated_at`, which drives library ordering and the relative-time label.
@@ -473,6 +520,18 @@ pub fn save_page_source_text_cmd(
 ) -> Result<(), String> {
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     replace_source_text(&mut conn, &project_id, &page_texts)
+}
+
+#[tauri::command]
+pub fn list_page_texts_cmd(db: State<'_, Db>, project_id: String) -> Result<Vec<PageBody>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    list_page_texts(&conn, &project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_last_page_cmd(db: State<'_, Db>, id: String, page_no: i64) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    set_last_page(&conn, &id, page_no).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -744,6 +803,53 @@ mod tests {
         // Repair is not an edit. Touching the timestamp would reorder the
         // library as though the user had just worked on the book.
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn list_page_texts_prefers_the_edit_and_keeps_page_order() {
+        let mut conn = db::open_in_memory().unwrap();
+        create_project_with_id(&mut conn, "p1", "T", "en", "projects/p1/source.pdf", 3,
+            &["one".into(), "two".into(), "three".into()]).unwrap();
+        save_page_text(&conn, "p1", 2, "two, corrected").unwrap();
+        conn.execute("UPDATE pages SET source_text = NULL WHERE page_no = 3", []).unwrap();
+
+        let pages = super::list_page_texts(&conn, "p1").unwrap();
+        let got: Vec<(i64, &str)> = pages.iter().map(|p| (p.page_no, p.text.as_str())).collect();
+        assert_eq!(got, vec![(1, "one"), (2, "two, corrected"), (3, "")]);
+    }
+
+    #[test]
+    fn last_page_round_trips_and_starts_empty() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 5);
+        assert_eq!(get_project(&conn, "abc").unwrap().last_page, None);
+
+        super::set_last_page(&conn, "abc", 4).unwrap();
+        assert_eq!(get_project(&conn, "abc").unwrap().last_page, Some(4));
+    }
+
+    #[test]
+    fn set_last_page_leaves_updated_at_alone() {
+        let mut conn = db::open_in_memory().unwrap();
+        seed(&mut conn, "abc", 5);
+        let before: String = conn
+            .query_row("SELECT updated_at FROM projects WHERE id = 'abc'", [], |r| r.get(0))
+            .unwrap();
+
+        super::set_last_page(&conn, "abc", 3).unwrap();
+
+        let after: String = conn
+            .query_row("SELECT updated_at FROM projects WHERE id = 'abc'", [], |r| r.get(0))
+            .unwrap();
+        // Paging through a book is reading it. Touching the timestamp would
+        // reorder the library on every page turn.
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn set_last_page_rejects_an_unknown_project() {
+        let conn = db::open_in_memory().unwrap();
+        assert!(super::set_last_page(&conn, "nope", 1).is_err());
     }
 
     #[test]

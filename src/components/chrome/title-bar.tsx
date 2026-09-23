@@ -14,6 +14,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HISTORY_EVENT } from "@/components/editor/center-panel";
 import { ResizeBorders } from "./resize-borders";
 
 /** Window commands are all no-ops outside the desktop shell (`bun run dev`). */
@@ -155,6 +156,19 @@ function AppMenus({
           label={t("menu.redo")}
           shortcut={formatShortcut(MOD, SHIFT_KEY, "Z")}
           onSelect={() => edit("redo")}
+        />
+        <Sep />
+        <Item
+          label={t("menu.find")}
+          shortcut={formatShortcut(MOD, "F")}
+          disabled={!c.find}
+          onSelect={c.find}
+        />
+        <Item
+          label={t("menu.findInBook")}
+          shortcut={formatShortcut(MOD, SHIFT_KEY, "F")}
+          disabled={!c.findInBook}
+          onSelect={c.findInBook}
         />
         <Sep />
         <Item
@@ -383,6 +397,11 @@ function useEditActions() {
         .then((t) => t && document.execCommand("insertText", false, t))
         .catch(console.error);
       return;
+    }
+    if (action === "undo" || action === "redo") {
+      // A field with its own history (the page editor) cancels this.
+      const asked = new CustomEvent(HISTORY_EVENT, { detail: action, cancelable: true });
+      if (!el.dispatchEvent(asked)) return;
     }
     document.execCommand(action);
   }, []);

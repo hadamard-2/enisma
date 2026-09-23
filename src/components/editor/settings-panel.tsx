@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { AudioLines, FastForward, Pause, Play, Rewind } from "lucide-react";
+import { AudioLines, Pause, Play, RotateCcw, RotateCw, SkipBack, SkipForward } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,246 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { LANGUAGES, languageLabelKey } from "@/lib/languages";
 import { audioStateFor, formatDuration } from "@/lib/audio-state";
+import { describeKokoroVoice, singleSpeakerVoice } from "@/lib/voice-label";
+import {
+  decodeWav,
+  placeholderPeaks,
+  resampleBars,
+  WAVE_RESOLUTION,
+  wavePeaks,
+  type DecodedWav,
+} from "@/lib/waveform";
 import type { ModelPanelState } from "@/lib/model-state";
 import type { ModelStatus, PageAudio } from "@/lib/api";
 import { ModelPanel } from "./model-panel";
 
-/** How far the rewind and forward buttons jump, in seconds. */
-const SKIP_SECONDS = 10;
+/** How far the back and forward buttons jump, in seconds. */
+const SKIP_SECONDS = 5;
+/**
+ * The waveform is a fixed shape: this many bars, this wide, this far apart,
+ * centred in the card. A wider panel only adds space either side of it.
+ */
+const WAVE_BAR_COUNT = 70;
+const BAR_PX = 3;
+const GAP_PX = 2;
+/** How far an arrow key on the waveform jumps, in seconds. */
+const KEY_SEEK_SECONDS = 5;
+
+
+
+type Take = {
+  /** The decoded samples, or null until loaded (or if they could not be). */
+  wav: DecodedWav | null;
+  /** Measured bar heights, or null if the file could not be read for them. */
+  peaks: number[] | null;
+  /** Why the take could not be loaded; untranslated. */
+  error: string | null;
+};
+
+/**
+ * Load a stored take into memory, for playback and for its waveform.
+ *
+ * Fetched and decoded here, then played through Web Audio — never handed to an
+ * <audio> element. WebKitGTK, the webview on Linux, refuses Tauri's `asset:`
+ * scheme as a media source outright, and given a `blob:` URL instead it plays
+ * the first time but misplaces every seek: measured from the speaker output,
+ * "go to start" reported position 0 while sounding from 87s into the page. A
+ * `fetch` of the asset URL is reliable (it is how pdf.js loads the book), and
+ * holding the samples makes seeking exact.
+ *
+ * `createdAt` is in the key because a re-conversion writes new bytes to the
+ * same path, one take per page by design. The query string makes each take's
+ * URL distinct for any cache in between; the asset protocol resolves the path
+ * only, so the query does not change what is read.
+ */
+function useTake(path: string | null, createdAt: number | null): Take {
+  const [take, setTake] = useState<Take>({ wav: null, peaks: null, error: null });
+
+  useEffect(() => {
+    setTake({ wav: null, peaks: null, error: null });
+    if (!path) return;
+    let cancelled = false;
+    const abort = new AbortController();
+    fetch(`${convertFileSrc(path)}?v=${createdAt ?? 0}`, {
+      cache: "no-store",
+      signal: abort.signal,
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.arrayBuffer();
+      })
+      .then((buf) => {
+        if (cancelled) return;
+        const wav = decodeWav(buf);
+        if (!wav) throw new Error("not a WAV file Enisma can play");
+        setTake({ wav, peaks: wavePeaks(buf, WAVE_RESOLUTION), error: null });
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        console.error(e);
+        setTake({ wav: null, peaks: null, error: String(e) });
+      });
+    return () => {
+      cancelled = true;
+      abort.abort();
+    };
+  }, [path, createdAt]);
+
+  return take;
+}
+
+/**
+ * A transport over decoded samples: play, pause, and exact seeking.
+ *
+ * Web Audio has no pausable, seekable source — an AudioBufferSourceNode plays
+ * once from an offset and is thrown away — so the position is the model here:
+ * pausing records it, and playing or seeking starts a fresh source there. The
+ * displayed position is read from the audio clock every frame while playing,
+ * so it moves smoothly rather than in the media element's ~0.27s steps.
+ */
+function usePlayer(
+  wav: DecodedWav | null,
+  playing: boolean,
+  setPlaying: (p: boolean) => void,
+  onError: (message: string) => void,
+) {
+  const ctxRef = useRef<AudioContext | null>(null);
+  const bufferRef = useRef<AudioBuffer | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  // Where playback is, as of `startedAt` on the audio clock (null while paused).
+  const offsetRef = useRef(0);
+  const startedAtRef = useRef<number | null>(null);
+  const [position, setPosition] = useState(0);
+  const duration = wav ? wav.frames / wav.sampleRate : 0;
+  // Read by the resume continuation: a pause pressed while the audio context
+  // was still waking up must win, or the sound would start after it.
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+
+  const now = useCallback(() => {
+    const ctx = ctxRef.current;
+    const started = startedAtRef.current;
+    if (!ctx || started === null) return offsetRef.current;
+    return Math.min(duration, offsetRef.current + (ctx.currentTime - started));
+  }, [duration]);
+
+  const halt = useCallback(() => {
+    const src = sourceRef.current;
+    sourceRef.current = null;
+    if (src) {
+      src.onended = null;
+      try {
+        src.stop();
+      } catch {
+        // Already stopped; nothing to do.
+      }
+      src.disconnect();
+    }
+  }, []);
+
+  const startAt = useCallback(
+    (offset: number) => {
+      const ctx = ctxRef.current;
+      const buffer = bufferRef.current;
+      if (!ctx || !buffer) return;
+      halt();
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.onended = () => {
+        // Only a source that ran out, not one we replaced or stopped.
+        if (sourceRef.current !== src) return;
+        sourceRef.current = null;
+        startedAtRef.current = null;
+        offsetRef.current = duration;
+        setPosition(duration);
+        setPlaying(false);
+      };
+      offsetRef.current = offset;
+      startedAtRef.current = ctx.currentTime;
+      src.start(0, offset);
+      sourceRef.current = src;
+    },
+    [duration, halt, setPlaying],
+  );
+
+  // A new take starts from the beginning and never leaves the previous one
+  // sounding behind the new label.
+  useEffect(() => {
+    halt();
+    startedAtRef.current = null;
+    offsetRef.current = 0;
+    bufferRef.current = null;
+    setPosition(0);
+    setPlaying(false);
+  }, [wav, halt, setPlaying]);
+
+  useEffect(() => {
+    if (!wav) return;
+    if (!playing) {
+      if (startedAtRef.current !== null) {
+        offsetRef.current = now();
+        startedAtRef.current = null;
+        setPosition(offsetRef.current);
+      }
+      halt();
+      return;
+    }
+    if (sourceRef.current) return;
+    // Created on first play, inside the click that asked for it, which is
+    // what lets the webview allow sound at all.
+    ctxRef.current ??= new AudioContext();
+    const ctx = ctxRef.current;
+    if (!bufferRef.current) {
+      const b = ctx.createBuffer(wav.channels.length, wav.frames, wav.sampleRate);
+      wav.channels.forEach((ch, i) => b.copyToChannel(ch, i));
+      bufferRef.current = b;
+    }
+    // Play from the end means play again from the start.
+    const from = offsetRef.current >= duration - 0.05 ? 0 : offsetRef.current;
+    ctx.resume().then(
+      () => {
+        if (playingRef.current && !sourceRef.current) startAt(from);
+      },
+      (e: unknown) => {
+        setPlaying(false);
+        onError(String(e));
+      },
+    );
+  }, [playing, wav, duration, halt, now, startAt, setPlaying, onError]);
+
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const tick = () => {
+      setPosition(now());
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, now]);
+
+  useEffect(
+    () => () => {
+      halt();
+      void ctxRef.current?.close();
+      ctxRef.current = null;
+    },
+    [halt],
+  );
+
+  const seek = useCallback(
+    (seconds: number) => {
+      const to = Math.min(Math.max(0, seconds), duration);
+      setPosition(to);
+      if (sourceRef.current) startAt(to);
+      else offsetRef.current = to;
+    },
+    [duration, startAt],
+  );
+
+  return { position, duration, seek, now };
+}
 
 export function SettingsPanel({
   language,
@@ -34,7 +268,7 @@ export function SettingsPanel({
   page,
   audio,
   hasText,
-  converting,
+  convertingPage,
   cancelling,
   progress,
   convertError,
@@ -56,7 +290,12 @@ export function SettingsPanel({
   /** The stored take for this page, or null while none is known. */
   audio: PageAudio | null;
   hasText: boolean;
-  converting: boolean;
+  /**
+   * The page being converted, or null. Not necessarily `page`: other pages
+   * stay open for reading and editing while one converts, but only one
+   * conversion runs at a time.
+   */
+  convertingPage: number | null;
   /** A stop has been requested but the conversion has not settled yet. */
   cancelling: boolean;
   /** Fraction 0-1 from the last `tts://progress` event. */
@@ -82,57 +321,38 @@ export function SettingsPanel({
   };
 }) {
   const { t } = useTranslation();
+  const converting = convertingPage !== null;
 
   const state = audioStateFor({
     path: audio?.path ?? null,
     stale: audio?.stale ?? true,
-    converting,
+    converting: convertingPage === page,
     hasText,
     error: convertError,
   });
 
-  const path = audio?.path ?? null;
-  // The take's path is deterministic per page — one take per page by design —
-  // so a re-conversion writes new bytes behind a byte-identical URL. An
-  // <audio> element only reloads when its `src` attribute changes, so without
-  // a discriminator the player would keep serving the previous take while
-  // every label said the audio was current. `createdAt` moves on every
-  // conversion, which neither the duration nor the text hash does: identical
-  // text at the same voice and rate can yield the same duration, and a user
-  // who edits and then reverts lands back on the same hash. The asset
-  // protocol resolves the URI *path* only, so a query string is ignored by
-  // both the route and the scope check.
-  const src = path
-    ? `${convertFileSrc(path)}?v=${audio?.createdAt ?? 0}`
-    : null;
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [position, setPosition] = useState(0);
-
-  // A new take — or a different page — starts from the beginning, and must
-  // never leave the previous one still playing behind the new label.
-  useEffect(() => {
-    setPosition(0);
-    setPlaying(false);
-    const el = audioRef.current;
-    if (el) el.currentTime = 0;
-  }, [src, setPlaying]);
-
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el || !src) return;
-    if (playing) void el.play().catch(() => setPlaying(false));
-    else el.pause();
-  }, [playing, src, setPlaying]);
+  const take = useTake(audio?.path ?? null, audio?.createdAt ?? null);
+  /** Why playback was refused; untranslated. Shown rather than swallowed. */
+  const [playError, setPlayError] = useState<string | null>(null);
+  useEffect(() => setPlayError(null), [take.wav]);
+  const player = usePlayer(take.wav, playing, setPlaying, setPlayError);
+  const ready = take.wav !== null;
+  const position = player.position;
+  // The stored duration stands in until the take has loaded.
+  const durationSeconds = ready ? player.duration : (audio?.durationMs ?? 0) / 1000;
+  const seek = player.seek;
 
   function skip(seconds: number) {
-    const el = audioRef.current;
-    if (!el) return;
-    el.currentTime = Math.max(0, el.currentTime + seconds);
-    setPosition(el.currentTime);
+    seek(player.now() + seconds);
   }
 
-  // The stored duration is what the panel promises before playback starts;
-  // the element's own duration is only known once metadata has loaded.
+  // A page with no take yet still gets a wave, invented and seeded by page
+  // number so it holds still. It is replaced by the real one once a take
+  // exists — including a stale take, which is still this page's audio.
+  const invented = useMemo(() => placeholderPeaks(page, WAVE_RESOLUTION), [page]);
+  const peaks = take.peaks ?? invented;
+  const loadError = take.error ?? playError;
+
   const total = formatDuration(audio?.durationMs ?? null);
 
   return (
@@ -171,7 +391,7 @@ export function SettingsPanel({
         {/* Hidden rather than disabled when there is nothing to choose: the
             single-speaker languages have one voice, and an inert dropdown
             would invite the user to look for a choice that does not exist. */}
-        {voices.length > 0 && (
+        {voices.length > 0 ? (
           <Field label={t("ttsPanel.voice")}>
             <Select value={voice} onValueChange={setVoice} disabled={converting}>
               <SelectTrigger className="w-full">
@@ -180,12 +400,14 @@ export function SettingsPanel({
               <SelectContent>
                 {voices.map((v) => (
                   <SelectItem key={v} value={v}>
-                    {v}
+                    <KokoroVoiceName id={v} />
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
+        ) : (
+          <SingleSpeakerVoice language={language} />
         )}
 
         <Field label={t("ttsPanel.speakingRate")}>
@@ -228,11 +450,11 @@ export function SettingsPanel({
               onImport={model.onImport}
               onCancel={model.onCancel}
             />
-          ) : state === "converting" ? (
+          ) : converting ? (
             <div className="rounded-xl border border-line bg-surface p-3.5 shadow-paper-sm">
               <div className="flex items-center gap-2 text-[13px] text-ink-2">
                 <AudioLines size={15} className="animate-pulse text-teal" />
-                {t("ttsPanel.converting", { n: page })}
+                {t("ttsPanel.converting", { n: convertingPage ?? page })}
               </div>
               <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-line-2">
                 <div
@@ -288,59 +510,63 @@ export function SettingsPanel({
         </div>
 
         <div className="rounded-xl border border-line bg-surface p-3.5 shadow-paper-sm">
-          <Waveform playing={playing} />
-
-          {src && (
-            <audio
-              ref={audioRef}
-              src={src}
-              onTimeUpdate={(e) => setPosition(e.currentTarget.currentTime)}
-              onEnded={() => {
-                setPlaying(false);
-                setPosition(0);
-              }}
-              className="hidden"
+          {/* Sized to the wave, so the two times sit under its first and last
+              bars rather than at the card's edges. */}
+          <div className="mx-auto w-fit max-w-full">
+            <Waveform
+              peaks={peaks}
+              position={position}
+              duration={durationSeconds}
+              onSeek={ready ? seek : undefined}
+              label={t("ttsPanel.position")}
             />
-          )}
 
-          <div className="mt-1.5 flex justify-between font-mono text-[11px] text-ink-3">
-            <span>{formatDuration(position * 1000)}</span>
-            <span>{total}</span>
+            <div className="mt-1.5 flex justify-between font-mono text-[11px] text-ink-3">
+              <span>{formatDuration(position * 1000)}</span>
+              <span>{total}</span>
+            </div>
           </div>
 
           {/* The play button is centred on the card, not on the row: the
               side controls are laid out around it rather than sharing the
               space with it. */}
           <div className="relative mt-2.5 flex items-center justify-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("ttsPanel.rewind")}
-              className="text-ink-2"
-              disabled={!src}
+            <Control label={t("ttsPanel.toStart")} disabled={!ready} onClick={() => seek(0)}>
+              <SkipBack />
+            </Control>
+            <Control
+              label={t("ttsPanel.back", { seconds: SKIP_SECONDS })}
+              disabled={!ready}
               onClick={() => skip(-SKIP_SECONDS)}
             >
-              <Rewind />
-            </Button>
+              <RotateCcw />
+            </Control>
             <button
               onClick={() => setPlaying(!playing)}
-              disabled={!src}
+              disabled={!ready}
               aria-label={t(playing ? "ttsPanel.pause" : "ttsPanel.play")}
-              className="grid size-10 cursor-pointer place-items-center rounded-full bg-teal text-surface shadow-paper-sm transition-colors hover:bg-teal-ink disabled:cursor-not-allowed disabled:opacity-40"
+              className="mx-1 grid size-10 cursor-pointer place-items-center rounded-full bg-teal text-surface shadow-paper-sm transition-colors hover:bg-teal-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
               {playing ? <Pause size={17} /> : <Play size={17} className="ml-0.5" />}
             </button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("ttsPanel.forward")}
-              className="text-ink-2"
-              disabled={!src}
+            <Control
+              label={t("ttsPanel.forward", { seconds: SKIP_SECONDS })}
+              disabled={!ready}
               onClick={() => skip(SKIP_SECONDS)}
             >
-              <FastForward />
-            </Button>
+              <RotateCw />
+            </Control>
+            <Control label={t("ttsPanel.toEnd")} disabled={!ready} onClick={() => seek(durationSeconds)}>
+              <SkipForward />
+            </Control>
           </div>
+
+          {/* The engine's own words, deliberately untranslated. */}
+          {loadError !== null && (
+            <div className="mt-2.5 text-[12px] text-amber-ink">
+              {t("ttsPanel.audioLoadError", { error: loadError })}
+            </div>
+          )}
         </div>
 
       </div>
@@ -415,44 +641,152 @@ function LabeledSlider({
   );
 }
 
-function Waveform({ playing }: { playing: boolean }) {
-  const BARS = 36;
-  const heights = useMemo(
-    () =>
-      Array.from({ length: BARS }, (_, i) => {
-        const t = i / BARS;
-        return (
-          0.3 +
-          0.7 *
-            Math.abs(Math.sin(t * 11) * Math.cos(t * 5)) *
-            (0.6 + 0.4 * Math.sin(t * 19))
-        );
-      }),
-    [],
+/** A Kokoro voice as its name, then accent and gender in a quieter tone. */
+function KokoroVoiceName({ id }: { id: string }) {
+  const { t } = useTranslation();
+  const v = describeKokoroVoice(id);
+  const traits = [
+    v.accent && t(`voices.accent.${v.accent}`),
+    v.gender && t(`voices.gender.${v.gender}`),
+  ].filter(Boolean);
+  return (
+    <span>
+      {v.name}
+      {traits.length > 0 && <span className="text-ink-3"> · {traits.join(" · ")}</span>}
+    </span>
   );
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => setTick((t) => t + 1), 100);
-    return () => clearInterval(id);
-  }, [playing]);
+}
+
+/**
+ * The one voice of a single-speaker language, shown as plain text.
+ *
+ * Deliberately not a disabled dropdown: there is no choice to make, and an
+ * inert control would invite the user to look for one.
+ */
+function SingleSpeakerVoice({ language }: { language: string }) {
+  const { t } = useTranslation();
+  const fixed = singleSpeakerVoice(language);
+  if (!fixed) return null;
+  return (
+    <Field label={t("ttsPanel.voice")}>
+      <div className="text-sm text-ink">
+        {t(fixed.nameKey)}
+        <span className="text-ink-3"> · {t(`voices.gender.${fixed.gender}`)}</span>
+      </div>
+    </Field>
+  );
+}
+
+/** A secondary transport button, with its label as tooltip and for screen readers. */
+function Control({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
+      title={label}
+      className="text-ink-2"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+/**
+ * Voice-message style waveform: thin rounded bars mirrored about the centre
+ * line, filled up to the playhead, and clickable to jump.
+ *
+ * A fixed number of fixed-width bars, centred: resizing the panel changes
+ * only the space around the wave, never the bars themselves.
+ */
+function Waveform({
+  peaks,
+  position,
+  duration,
+  onSeek,
+  label,
+}: {
+  /** Fine-grained levels, 0-1, grouped into WAVE_BAR_COUNT bars. */
+  peaks: number[];
+  /** Seconds. */
+  position: number;
+  /** Seconds; 0 while unknown. */
+  duration: number;
+  /** Absent while there is nothing to seek in. */
+  onSeek?: (seconds: number) => void;
+  label: string;
+}) {
+  const bars = useMemo(() => resampleBars(peaks, WAVE_BAR_COUNT), [peaks]);
+
+  const played = duration > 0 ? position / duration : 0;
+  const seekable = onSeek !== undefined && duration > 0;
+
+  function seekTo(e: PointerEvent<HTMLDivElement>) {
+    if (!seekable) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    onSeek(fraction * duration);
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (!seekable) return;
+    if (e.key === "ArrowLeft") onSeek(position - KEY_SEEK_SECONDS);
+    else if (e.key === "ArrowRight") onSeek(position + KEY_SEEK_SECONDS);
+    else return;
+    e.preventDefault();
+  }
 
   return (
-    <div className="mt-0.5 flex h-8 items-center gap-0.5">
-      {heights.map((h, i) => {
-        const playedRatio = playing ? ((tick + i) % BARS) / BARS : 0.25;
-        const isPlayed = i / BARS < playedRatio;
-        return (
-          <div
-            key={i}
-            className={cn(
-              "flex-1 rounded-sm transition-colors duration-200",
-              isPlayed ? "bg-teal" : "bg-line-2",
-            )}
-            style={{ height: `${Math.round(h * 100)}%` }}
-          />
-        );
-      })}
+    <div
+      role="slider"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={Math.round(duration)}
+      aria-valuenow={Math.round(position)}
+      aria-valuetext={formatDuration(position * 1000)}
+      aria-disabled={!seekable}
+      tabIndex={seekable ? 0 : -1}
+      onPointerDown={seekTo}
+      onKeyDown={onKeyDown}
+      // An explicit width, not the content's: sized by its content inside the
+      // fit-to-wave wrapper, the row collapsed to its minimum and every bar
+      // rendered 1px wide. `max-w-full` still lets it shrink in a narrow card.
+      style={{ width: WAVE_BAR_COUNT * BAR_PX + (WAVE_BAR_COUNT - 1) * GAP_PX }}
+      className={cn(
+        "mt-0.5 flex h-8 max-w-full items-center justify-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-teal/40",
+        seekable && "cursor-pointer",
+      )}
+    >
+      {bars.map((h, i) => (
+        <div
+          key={i}
+          className={cn(
+            // Shrinks only if the card is narrower than the whole wave;
+            // otherwise every bar keeps its width.
+            "min-w-px rounded-full transition-colors duration-150",
+            i / bars.length < played ? "bg-teal" : "bg-line-2",
+          )}
+          // A floor, so the quietest bar still reads as part of the wave
+          // rather than a gap in it.
+          style={{
+            flex: `0 1 ${BAR_PX}px`,
+            marginLeft: i === 0 ? 0 : GAP_PX,
+            height: `${Math.round(12 + 88 * h)}%`,
+          }}
+        />
+      ))}
     </div>
   );
 }

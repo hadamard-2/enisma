@@ -15,17 +15,31 @@ import ti from "@/locales/ti.json";
  * file, is a copy that can drift.
  */
 type Entry = { message: string; context: string };
-type Catalogue = Record<string, Record<string, Entry>>;
+type Node = { [key: string]: Node | Entry };
+type Messages = { [key: string]: Messages | string };
 
-function messages(raw: unknown): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
-  for (const [ns, group] of Object.entries(raw as Catalogue)) {
-    if (ns === "_meta") continue;
-    out[ns] = Object.fromEntries(
-      Object.entries(group).map(([key, entry]) => [key, entry.message]),
-    );
+const isEntry = (v: unknown): v is Entry =>
+  typeof v === "object" && v !== null && typeof (v as Entry).message === "string";
+
+/**
+ * Replace every `{ message, context }` leaf with its message, at any depth.
+ *
+ * Recursive because groups nest (`voices.accent.american`). A loader that only
+ * looked two levels down handed i18next an object where a string belonged,
+ * and the UI showed the raw key instead of the text.
+ */
+function strip(node: Node): Messages {
+  const out: Messages = {};
+  for (const [key, value] of Object.entries(node)) {
+    out[key] = isEntry(value) ? value.message : strip(value);
   }
   return out;
+}
+
+function messages(raw: unknown): Messages {
+  const { _meta, ...catalogue } = raw as Node & { _meta?: unknown };
+  void _meta;
+  return strip(catalogue as Node);
 }
 
 /**

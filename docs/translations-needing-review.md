@@ -72,3 +72,71 @@ Same caveat as everything above: written by Claude, not a native speaker. These 
 | `modelPanel.importTooltip` | Install from a folder you already have — for a machine with no connection. | አስቀድመው ካለዎት አቃፊ ይጫኑ — ግንኙነት ለሌለው ማሽን። | ድሮ ካብ ዘለካ ኣቃፊ ጽዓን — ርክብ ንዘይብሉ ማሽን። | Faayilii duraan qabdu irraa ijaari — maashinii walqunnamtii hin qabneef. |
 | `modelPanel.cancel` | Cancel | ሰርዝ | ሰርዝ | Dhiisi |
 | `modelPanel.cancelling` | Cancelling… | በመሰረዝ ላይ… | ብምስራዝ… | Dhiisaa jira… |
+
+## Voice names and the audio player (added with the voice labels and real waveform)
+
+Written by Claude, not reviewed by a native speaker. Three things to check first:
+
+- **The voice names are proper names, transliterated, not translated** — Abebe for Amharic, Tesfay for Tigrigna, Gemechu for Oromo. They are placeholders for whatever names you actually want; changing one is a one-line edit per locale under `voices.name`. The Oromo-interface spellings (`Tesfaay`, `Gammachuu`) are Qubee transliterations I am not confident of, and `Abebe` is left in its common Latin form there because I could not settle its Qubee spelling.
+- **The accent and gender labels are shown as adjectives after a voice's name** (`Heart · American · Female`). Check that `አሜሪካዊ` / `ኣመሪካዊ` / `Ameerikaa` and the gender words read naturally in that position — grammatical gender agreement with an implied "voice" noun may call for a different form.
+- **`ttsPanel.position` is a screen-reader label only**, never seen on screen.
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `voices.accent.american` | American | አሜሪካዊ | ኣመሪካዊ | Ameerikaa |
+| `voices.accent.british` | British | እንግሊዛዊ | እንግሊዛዊ | Ingiliz |
+| `voices.gender.female` | Female | ሴት | ኣንስተይቲ | Dubartii |
+| `voices.gender.male` | Male | ወንድ | ተባዕታይ | Dhiira |
+| `voices.name.am` | Abebe | አበበ | ኣበበ | Abebe |
+| `voices.name.ti` | Tesfay | ተስፋይ | ተስፋይ | Tesfaay |
+| `voices.name.om` | Gemechu | ገመቹ | ገመቹ | Gammachuu |
+| `ttsPanel.audioLoadError` | Enisma could not load this page's audio: {error} | Enisma የዚህን ገጽ ድምፅ መጫን አልቻለም፦ {error} | Enisma ናይዚ ገጽ ድምጺ ክጽዕን ኣይከኣለን፦ {error} | Enisma sagalee fuula kanaa fe'uu hin dandeenye: {error} |
+| `ttsPanel.position` | Playback position | የማጫወቻ ቦታ | ቦታ ምጽዋት | Bakka taphachiisaa |
+
+`center.unsavedChanges` was removed in the same change: autosave made the indicator pointless. Its three translations no longer need review.
+
+## Save failures (added when the "unsaved changes" indicator was replaced)
+
+Written by Claude, not reviewed by a native speaker. It continues the footer line in lowercase, after the word count. The second half is an instruction: the edit is re-sent by the next keystroke, not automatically.
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `center.saveFailed` | not saved — keep typing to retry | አልተቀመጠም — እንደገና ለመሞከር መተየብዎን ይቀጥሉ | ኣይተዓቀበን — ንምድጋም ምጽሓፍ ቀጽል | hin olkaa'amne — irra deebi'uuf barreessuu itti fufi |
+
+## Player controls (added with the start/end and 5-second buttons)
+
+Written by Claude, not reviewed by a native speaker. Tooltips and screen-reader labels only. `ttsPanel.rewind` was removed, and `ttsPanel.forward` changed meaning: it used to be a bare "Forward", and now takes a `{seconds}` count.
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `ttsPanel.toStart` | Go to start | ወደ መጀመሪያ | ናብ መጀመርታ | Gara jalqabaatti |
+| `ttsPanel.back` | Back {seconds} seconds | {seconds} ሰከንድ ወደኋላ | {seconds} ካልኢት ንድሕሪት | Sekondii {seconds} duubatti |
+| `ttsPanel.forward` | Forward {seconds} seconds | {seconds} ሰከንድ ወደፊት | {seconds} ካልኢት ንቕድሚት | Sekondii {seconds} fuulduratti |
+| `ttsPanel.toEnd` | Go to end | ወደ መጨረሻ | ናብ መወዳእታ | Gara dhumaatti |
+
+## Search (added with page find and book search)
+
+Written by Claude, not reviewed by a native speaker. `search.summary` uses ICU plurals in English only; the Amharic, Tigrigna and Oromo versions use one plural form for every count, which reads oddly for 1 ("1 ውጤቶች") — worth fixing with proper plural wrappers.
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `find.placeholder` | Find on this page | በዚህ ገጽ ላይ ፈልግ | ኣብዚ ገጽ ድለ | Fuula kana irratti barbaadi |
+| `find.count` | {current} of {total} | {current} ከ{total} | {current} ካብ {total} | {current} kan {total} |
+| `find.none` | No results | ምንም ውጤት የለም | ውጽኢት የለን | Bu'aan hin jiru |
+| `find.previous` | Previous match | ቀዳሚ ውጤት | ዝሓለፈ ውጽኢት | Bu'aa duraa |
+| `find.next` | Next match | ቀጣይ ውጤት | ዝቕጽል ውጽኢት | Bu'aa itti aanu |
+| `find.close` | Close | ዝጋ | ዕጸው | Cufi |
+| `search.placeholder` | Search this book | በዚህ መጽሐፍ ውስጥ ፈልግ | ኣብዚ መጽሓፍ ድለ | Kitaaba kana keessa barbaadi |
+| `search.summary` | {count, plural, one {# match} other {# matches}} on {pages, plural, one {# page} other {# pages}} | {count} ውጤቶች በ{pages} ገጾች | {count} ውጽኢታት ኣብ {pages} ገጻት | Bu'aa {count} fuula {pages} irratti |
+| `search.none` | No matches in this book | በዚህ መጽሐፍ ውስጥ ምንም ውጤት የለም | ኣብዚ መጽሓፍ ውጽኢት የለን | Kitaaba kana keessatti bu'aan hin jiru |
+| `search.page` | Page {n} | ገጽ {n} | ገጽ {n} | Fuula {n} |
+| `search.loading` | Reading the book… | መጽሐፉን በማንበብ ላይ… | መጽሓፍ ብምንባብ… | Kitaabni dubbifamaa jira… |
+| `search.error` | Enisma could not read this book's text: {error} | Enisma የዚህን መጽሐፍ ጽሑፍ ማንበብ አልቻለም፦ {error} | Enisma ናይዚ መጽሓፍ ጽሑፍ ከንብብ ኣይከኣለን፦ {error} | Enisma barreeffama kitaaba kanaa dubbisuu hin dandeenye: {error} |
+| `search.hint` | Type to search every page of this book | የዚህን መጽሐፍ ገጾች በሙሉ ለመፈለግ ይተይቡ | ኩሎም ገጻት ናይዚ መጽሓፍ ንምድላይ ጽሓፍ | Fuulota kitaaba kanaa hunda barbaaduuf barreessi |
+
+## Edit menu search items
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `menu.find` | Find | ፈልግ | ድለ | Barbaadi |
+| `menu.findInBook` | Find in book | በመጽሐፉ ውስጥ ፈልግ | ኣብ መጽሓፍ ድለ | Kitaaba keessa barbaadi |

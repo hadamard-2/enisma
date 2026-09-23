@@ -12,6 +12,11 @@ describe("i18n", () => {
     expect(i18n.t("nav.newProject")).toBe("New project");
   });
 
+  it("resolves a key nested more than two levels deep", () => {
+    expect(i18n.t("voices.accent.american")).toBe("American");
+    expect(i18n.t("voices.gender.female")).toBe("Female");
+  });
+
   it("does not leak the translator-facing context field", () => {
     expect(i18n.t("nav.newProject")).not.toContain("context");
   });

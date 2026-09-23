@@ -26,6 +26,8 @@ export interface ProjectDetail {
   rate: number;
   /** Right-hand panel's remembered voice, not a book property; the default M5's export offers. */
   voice: string | null;
+  /** The page this project was last left on; null if never. May exceed the page count. */
+  lastPage: number | null;
   pages: PageMeta[];
   /** Pages never extracted (`source_text IS NULL`). Non-zero triggers repair. */
   pagesMissingText: number;
@@ -63,6 +65,14 @@ export const savePageText = (projectId: string, pageNo: number, text: string) =>
 
 export const setPageDone = (projectId: string, pageNo: number, done: boolean) =>
   invoke<void>("set_page_done_cmd", { projectId, pageNo, done });
+
+/** Every page's text as the editor shows it (the edit, else the extraction). */
+export const listPageTexts = (projectId: string) =>
+  invoke<{ pageNo: number; text: string }[]>("list_page_texts_cmd", { projectId });
+
+/** Remember the page a project was left on. Does not count as an edit. */
+export const setLastPage = (id: string, pageNo: number) =>
+  invoke<void>("set_last_page_cmd", { id, pageNo });
 
 export const savePageSourceText = (projectId: string, pageTexts: string[]) =>
   invoke<void>("save_page_source_text_cmd", { projectId, pageTexts });

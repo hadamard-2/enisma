@@ -29,6 +29,10 @@ export type AppCommands = {
   /** There's a text field on this screen, so the Edit menu has something to act on. */
   canEdit?: boolean;
   savePage?: () => void;
+  /** Open the find bar on the current page. */
+  find?: () => void;
+  /** Open the book-wide search. */
+  findInBook?: () => void;
   togglePageDone?: () => void;
   /** Whether the active page is done — drives the menu item's checkmark. */
   pageDone?: boolean;

@@ -56,6 +56,8 @@ pub fn run() {
             project::save_page_text_cmd,
             project::save_page_source_text_cmd,
             project::set_page_done_cmd,
+            project::set_last_page_cmd,
+            project::list_page_texts_cmd,
             convert::convert_page_cmd,
             convert::cancel_conversion_cmd,
             convert::get_page_audio_cmd,

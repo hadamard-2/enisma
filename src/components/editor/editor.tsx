@@ -31,6 +31,7 @@ import {
   modelStatus,
   MODEL_INSTALL_CANCELLED,
   type ModelStatus,
+  setLastPage,
   setPageDone,
   updateProject,
   CONVERSION_CANCELLED,
@@ -43,6 +44,7 @@ import { modelStateFor } from "@/lib/model-state";
 import { extractFromUrl } from "@/lib/extract-open";
 import { cn } from "@/lib/utils";
 import { reconcileVoice } from "@/lib/voice-selection";
+import { resumePage } from "@/lib/resume-page";
 import { formatShortcut, MOD, SHIFT_KEY, sidecarHealth } from "@/lib/platform";
 import { useRegisterCommands } from "@/lib/app-commands";
 import {
@@ -51,12 +53,16 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { PagePanel, type PageFilter } from "./page-panel";
-import { CenterPanel, type View } from "./center-panel";
+import { CenterPanel, type SelectRequest, type View } from "./center-panel";
+import { BookSearch, type BookSearchPick } from "./book-search";
 import { SettingsPanel } from "./settings-panel";
 
 const VIEW_ORDER: View[] = ["pdf", "split", "edit"];
 
 const SAVE_DEBOUNCE_MS = 500;
+
+/** How many times a failed voice-list fetch is retried before giving up. */
+const VOICE_RETRIES = 18;
 
 /** Clear of the panel toggle (left-3, size-8) when the page list is shut. */
 const TITLE_LEFT_COLLAPSED = 52;
@@ -176,9 +182,16 @@ function Editor({
 }) {
   const { t } = useTranslation();
   const [pages, setPages] = useState<PageMeta[]>(project.pages);
-  const [activePage, setActivePage] = useState(
-    project.pages.find((p) => !p.done)?.pageNo ?? 1,
+  const [activePage, setActivePage] = useState(() =>
+    resumePage(project.pages, project.lastPage),
   );
+
+  // Remember where the user is, so reopening the project resumes here. Every
+  // page change is written, not debounced: it is one row, and a debounce
+  // would drop the final page when the user leaves the editor inside it.
+  useEffect(() => {
+    setLastPage(project.id, activePage).catch(console.error);
+  }, [project.id, activePage]);
   const [title, setTitle] = useState(project.title);
   const [language, setLanguage] = useState<string>(project.language);
   const [voices, setVoices] = useState<string[]>([]);
@@ -209,24 +222,37 @@ function Editor({
   // panel hides the field when the list is empty.
   useEffect(() => {
     let cancelled = false;
-    listVoices(language)
-      .then((list) => {
-        if (cancelled) return;
-        setVoices(list);
-        // A selection carried over from another language must not survive the
-        // switch - it would name a voice this language cannot speak with.
-        const { voice: next, persist } = reconcileVoice(list, voiceRef.current);
-        if (persist) {
-          voiceRef.current = next;
-          setVoice(next);
-          updateProject(project.id, { voice: next }).catch(console.error);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setVoices([]);
-      });
+    let retry: number | null = null;
+    const load = (attempt: number) =>
+      listVoices(language)
+        .then((list) => {
+          if (cancelled) return;
+          setVoices(list);
+          // A selection carried over from another language must not survive the
+          // switch - it would name a voice this language cannot speak with.
+          const { voice: next, persist } = reconcileVoice(list, voiceRef.current);
+          if (persist) {
+            voiceRef.current = next;
+            setVoice(next);
+            updateProject(project.id, { voice: next }).catch(console.error);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setVoices([]);
+          // A failure is not an answer. The usual one is "sidecar starting" —
+          // the webview is up seconds before the sidecar has loaded its models,
+          // and a sidecar restart reopens that window — so treating it as final
+          // hid the voice menu until the language was switched. Keep asking,
+          // backing off, for about a minute.
+          if (attempt < VOICE_RETRIES) {
+            retry = window.setTimeout(() => void load(attempt + 1), Math.min(4000, 500 * 2 ** attempt));
+          }
+        });
+    void load(0);
     return () => {
       cancelled = true;
+      if (retry !== null) window.clearTimeout(retry);
     };
   }, [language, project.id, modelsVersion]);
   const [playing, setPlaying] = useState(false);
@@ -251,6 +277,15 @@ function Editor({
     textRef.current = text;
   }, [text]);
   const [saved, setSaved] = useState(true);
+  // A write that was rejected, and the page it was for. Kept apart from
+  // `saved`, which is false for the half second of every debounce: only an
+  // actual failure is worth telling the user about. Filed under its page so
+  // it is never shown against a different one.
+  const [saveError, setSaveError] = useState<{
+    projectId: string;
+    page: number;
+    message: string;
+  } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>("split");
 
@@ -322,12 +357,20 @@ function Editor({
             savedTextRef.current = p.text;
             setSaved(pendingRef.current === null || pendingRef.current === p);
           }
+          // Every write carries the whole page, so any success on that page
+          // supersedes whatever failed before it.
+          setSaveError((err) =>
+            err && err.projectId === p.projectId && err.page === p.page ? null : err,
+          );
           settle();
         },
         (e: unknown) => {
           console.error(e);
+          setSaveError({ projectId: p.projectId, page: p.page, message: String(e) });
           // Release the slot so a later effect run can queue the same text
-          // again; the indicator stays on "unsaved changes" until one lands.
+          // again; `saved` stays false until one lands. Nothing retries on its
+          // own — the next keystroke re-sends the whole page, which is what
+          // the footer tells the user.
           settle();
         },
       );
@@ -445,8 +488,10 @@ function Editor({
   // pending write, which is why the timer no longer has to die with the effect.
   useEffect(() => () => sendPending(), [project.id, activePage, sendPending]);
 
-  // Autosave on a short debounce; this is what finally makes the panel's
-  // "saved / unsaved changes" indicator tell the truth.
+  // Autosave on a short debounce. `saved` is no longer shown to the user —
+  // with autosave it would only flash on every pause in typing — but it is
+  // still what tells the audio panel that an edit has reached the database,
+  // which is when a take's staleness can change.
   //
   // This effect only decides WHAT to queue — never when the write goes out. It
   // attributes `text` to `textPageRef`, the page a load actually delivered it
@@ -474,8 +519,8 @@ function Editor({
       // A write already on the chain cannot be cancelled — it will land, and
       // it carries the text the user has just undone. Record where the page
       // must end up so the completion re-queues it. Until that correction
-      // lands, storage and the screen disagree, so the indicator must not
-      // claim "saved".
+      // lands, storage and the screen disagree, so `saved` must not claim
+      // otherwise.
       const f = inFlightRef.current;
       if (f && f.page === page && f.projectId === project.id) {
         f.supersededBy = text;
@@ -505,12 +550,28 @@ function Editor({
   // may even finish first. Only `convertPage` settling clears it.
   const [cancelling, setCancelling] = useState(false);
   const [progress, setProgress] = useState(0);
-  /** The engine's own words when a conversion failed; untranslated. */
-  const [convertError, setConvertError] = useState<string | null>(null);
+  /**
+   * The engine's own words when a conversion failed, untranslated, and the
+   * page it failed on. Other pages stay usable while one converts, so the
+   * user may be elsewhere when it fails; the message waits for them on its
+   * own page rather than being shown against, or wiped by, another one.
+   */
+  const [convertError, setConvertError] = useState<{ page: number; message: string } | null>(
+    null,
+  );
   // The page a running conversion belongs to. Cancel names a page, and Rust
   // refuses to stop a job the named page does not own, so this must be the
-  // page the conversion was STARTED on, not whatever is on screen now.
+  // page the conversion was STARTED on, not whatever is on screen now. The
+  // ref serves the event listener and the unmount cleanup, which must not
+  // re-subscribe on every change; the state is what renders.
   const convertingPageRef = useRef<number | null>(null);
+  const [convertingPage, setConvertingPage] = useState<number | null>(null);
+  // The page on screen, for `runConvert`'s continuation: the user may have
+  // moved on by the time a conversion finishes.
+  const activePageRef = useRef(activePage);
+  useEffect(() => {
+    activePageRef.current = activePage;
+  }, [activePage]);
 
   const hasText = text.trim().length > 0;
 
@@ -518,8 +579,14 @@ function Editor({
   // whenever the settings it is judged against change, and whenever an edit
   // lands (`saved` flipping back to true) — staleness is computed from the
   // stored text hash, which only moves when a write does.
+  //
+  // Skipped only while THIS page is converting: a read then could land after
+  // the conversion's own result and put the old take back on screen. Any
+  // other page loads normally, and `convertingPage` returning to null reloads
+  // whichever page is on screen once the conversion settles.
+  const convertingActive = convertingPage !== null && convertingPage === activePage;
   useEffect(() => {
-    if (converting) return;
+    if (convertingActive) return;
     let cancelled = false;
     getPageAudio(project.id, activePage, language, voice, speed).then(
       (a) => {
@@ -535,12 +602,11 @@ function Editor({
     return () => {
       cancelled = true;
     };
-  }, [project.id, activePage, language, voice, speed, saved, converting]);
+  }, [project.id, activePage, language, voice, speed, saved, convertingActive]);
 
-  // A conversion is for one page, so a page change abandons its error and
-  // player position rather than showing them against the page now on screen.
+  // The player belongs to the page on screen, so a page change stops it. A
+  // conversion error is kept: it is filed under its own page.
   useEffect(() => {
-    setConvertError(null);
     setPlaying(false);
   }, [activePage]);
 
@@ -576,11 +642,13 @@ function Editor({
   async function runConvert() {
     if (converting) return;
     const pageNo = activePage;
-    setConvertError(null);
+    // A retry supersedes this page's failure; another page's is still unread.
+    setConvertError((e) => (e?.page === pageNo ? null : e));
     setProgress(0);
     setCancelling(false);
     setPlaying(false);
     convertingPageRef.current = pageNo;
+    setConvertingPage(pageNo);
     setConverting(true);
     try {
       // The backend synthesizes the text it reads out of the database, so a
@@ -591,16 +659,19 @@ function Editor({
       const a = await convertPage(project.id, pageNo, voice, speed);
       // Reached even when a cancel was requested and lost the race: Rust keeps
       // no memory of the request, so a take finished before the flag was read
-      // is a completed conversion, and is shown as one.
-      setAudio(a);
+      // is a completed conversion, and is shown as one. Only if its page is
+      // still on screen, though — the user may have moved on, and `audio`
+      // describes whichever page is showing.
+      if (activePageRef.current === pageNo) setAudio(a);
     } catch (e: unknown) {
       const message = String(e);
       // A cancellation is an outcome the user asked for, not a failure. Every
       // other rejection — including "another page is already being converted"
       // — is surfaced, so nothing can fail silently.
-      if (message !== CONVERSION_CANCELLED) setConvertError(message);
+      if (message !== CONVERSION_CANCELLED) setConvertError({ page: pageNo, message });
     } finally {
       convertingPageRef.current = null;
+      setConvertingPage(null);
       setConverting(false);
       setCancelling(false);
       setProgress(0);
@@ -769,13 +840,38 @@ function Editor({
   }
 
   function gotoPage(delta: number) {
-    // The shield below covers the mouse; this covers the arrow keys.
-    if (converting) return;
     const idx = visiblePages.findIndex((p) => p.pageNo === activePage);
     if (idx === -1) return;
     const nextIdx = Math.max(0, Math.min(visiblePages.length - 1, idx + delta));
     const next = visiblePages[nextIdx];
     if (next) setActivePage(next.pageNo);
+  }
+
+  // ---- Search -------------------------------------------------------------
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocus, setFindFocus] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [selectRequest, setSelectRequest] = useState<SelectRequest | null>(null);
+
+  function openFind() {
+    // The find bar lives in the text pane, so it needs one on screen.
+    if (view === "pdf") setView("split");
+    setFindOpen(true);
+    setFindFocus((n) => n + 1);
+  }
+
+  function pickSearchResult(hit: BookSearchPick) {
+    setSearchOpen(false);
+    if (view === "pdf") setView("split");
+    setFindOpen(true);
+    setActivePage(hit.pageNo);
+    setSelectRequest((prev) => ({
+      page: hit.pageNo,
+      start: hit.start,
+      end: hit.end,
+      query: hit.query,
+      nonce: (prev?.nonce ?? 0) + 1,
+    }));
   }
 
   function cycleView(delta: number) {
@@ -819,6 +915,8 @@ function Editor({
         back: onBack,
         canEdit: true,
         savePage: sendPending,
+        find: openFind,
+        findInBook: () => setSearchOpen(true),
         togglePageDone: () => toggleDone(activePage),
         pageDone: activeDone,
         view,
@@ -855,9 +953,15 @@ function Editor({
         cycleView(1);
         return;
       }
-      // Before the typing guard on purpose: the footer advertises this, and
-      // the user is in the textarea when they reach for it. Without the
-      // preventDefault the browser's own save dialog opens instead.
+      // Before the typing guard on purpose: the user is usually in the
+      // textarea when they reach for these.
+      if (mod && !e.altKey && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        if (e.shiftKey) setSearchOpen(true);
+        else openFind();
+        return;
+      }
+      // Without the preventDefault the browser's own save dialog opens.
       if (mod && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
         sendPending();
@@ -926,7 +1030,6 @@ function Editor({
             }}
           >
             <div className="relative h-full">
-              <ConversionShield active={converting} />
               <PagePanel
                 pages={pages}
                 filter={filter}
@@ -942,7 +1045,6 @@ function Editor({
 
           <ResizablePanel id="center" defaultSize="52%" minSize="35%">
             <div className="relative h-full">
-              <ConversionShield active={converting} />
               <FloatingPagePill
                 page={activePage}
                 totalPages={pages.length}
@@ -958,11 +1060,22 @@ function Editor({
                 repairError={repairError}
                 text={text}
                 setText={setText}
-                saved={saved}
                 loadError={loadError}
+                saveError={
+                  saveError?.projectId === project.id && saveError.page === activePage
+                    ? saveError.message
+                    : null
+                }
                 view={view}
                 done={activeDone}
                 onToggleDone={() => toggleDone(activePage)}
+                findOpen={findOpen}
+                findFocus={findFocus}
+                onCloseFind={() => setFindOpen(false)}
+                selectRequest={selectRequest}
+                // Read at render: every text load sets the ref before the
+                // state update that re-renders with the new text.
+                textPage={textPageRef.current}
               />
             </div>
           </ResizablePanel>
@@ -1001,10 +1114,10 @@ function Editor({
               page={activePage}
               audio={audio}
               hasText={hasText}
-              converting={converting}
+              convertingPage={convertingPage}
               cancelling={cancelling}
               progress={progress}
-              convertError={convertError}
+              convertError={convertError?.page === activePage ? convertError.message : null}
               onConvert={runConvert}
               onCancel={requestCancel}
               model={{
@@ -1021,27 +1134,16 @@ function Editor({
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      {searchOpen && (
+        <BookSearch
+          projectId={project.id}
+          activePage={activePage}
+          activeText={text}
+          onPick={pickSearchResult}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
     </div>
-  );
-}
-
-/**
- * Swallows clicks over a panel while a conversion runs.
- *
- * The backend synthesizes the text it reads from the database, so editing or
- * paging away mid-conversion would produce a take of something other than what
- * the user is looking at — and the take is filed against the page the
- * conversion started on regardless. Blocking is cheaper to explain than
- * reconciling that afterwards. Above the floating pill (z-20), so the page
- * arrows are covered too.
- */
-function ConversionShield({ active }: { active: boolean }) {
-  if (!active) return null;
-  return (
-    <div
-      aria-hidden
-      className="absolute inset-0 z-30 cursor-not-allowed bg-paper/40"
-    />
   );
 }
 

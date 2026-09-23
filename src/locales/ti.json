@@ -262,6 +262,14 @@
       "message": "ደግም",
       "context": "Edit menu item. Reapplies an undone action."
     },
+    "find": {
+      "message": "ድለ",
+      "context": "Edit menu item. Opens the find bar to search the current page's text."
+    },
+    "findInBook": {
+      "message": "ኣብ መጽሓፍ ድለ",
+      "context": "Edit menu item. Opens a search across every page of the book."
+    },
     "savePage": {
       "message": "ገጽ ዕቀብ",
       "context": "Edit menu item. Writes the current page's corrected text to disk."
@@ -394,9 +402,9 @@
       "message": "ኣይተጽዓነን",
       "context": "Appended to the footer in a warning colour when the page's text failed to load. Lowercase: it continues the line before it."
     },
-    "unsavedChanges": {
-      "message": "ዘይተዓቀቡ ለውጥታት",
-      "context": "Appended to the footer in a warning colour while an edit is still being written to disk. Lowercase: it continues the line before it."
+    "saveFailed": {
+      "message": "ኣይተዓቀበን — ንምድጋም ምጽሓፍ ቀጽል",
+      "context": "Appended to the footer in a warning colour when the last edit to this page could not be written to disk. Nothing retries on its own; the next keystroke re-sends the whole page, which is what the second half tells the user. Lowercase: it continues the line before it."
     },
     "undoHint": {
       "message": "ተመለስ",
@@ -404,10 +412,6 @@
     },
     "redoHint": {
       "message": "ደግም",
-      "context": "Label next to a keyboard-shortcut chip in the editor footer. A reminder, not a button."
-    },
-    "saveHint": {
-      "message": "ዕቀብ",
       "context": "Label next to a keyboard-shortcut chip in the editor footer. A reminder, not a button."
     },
     "pageDone": {
@@ -488,13 +492,21 @@
       "message": "ገጽ {n}",
       "context": "Small uppercase label above the audio preview card, naming which page is being previewed."
     },
-    "rewind": {
-      "message": "ንድሕሪት ምለስ",
-      "context": "Screen-reader label on the skip-backwards button in the audio preview."
+    "toStart": {
+      "message": "ናብ መጀመርታ",
+      "context": "Tooltip and screen-reader label on the button that jumps to the start of this page's audio."
+    },
+    "back": {
+      "message": "{seconds} ካልኢት ንድሕሪት",
+      "context": "Tooltip and screen-reader label on the button that jumps back a few seconds in the audio. {seconds} is a number, currently 5."
     },
     "forward": {
-      "message": "ንቕድሚት",
-      "context": "Screen-reader label on the skip-forwards button in the audio preview."
+      "message": "{seconds} ካልኢት ንቕድሚት",
+      "context": "Tooltip and screen-reader label on the button that jumps forward a few seconds in the audio. {seconds} is a number, currently 5."
+    },
+    "toEnd": {
+      "message": "ናብ መወዳእታ",
+      "context": "Tooltip and screen-reader label on the button that jumps to the end of this page's audio."
     },
     "play": {
       "message": "ቅድመ-ትርኢት ኣጻውት",
@@ -510,7 +522,7 @@
     },
     "converting": {
       "message": "ገጽ {n} ኣብ ምቕያር…",
-      "context": "Shown while synthesis runs and the editor is blocked."
+      "context": "Shown in the audio panel while a page is being converted. {n} is the page being converted, which may not be the page on screen: other pages can be read and edited meanwhile."
     },
     "cancel": {
       "message": "ሰርዝ",
@@ -535,6 +547,14 @@
     "retry": {
       "message": "ደጊምካ ፈትን",
       "context": "Button beside a conversion error that starts the conversion over."
+    },
+    "audioLoadError": {
+      "message": "Enisma ናይዚ ገጽ ድምጺ ክጽዕን ኣይከኣለን፦ {error}",
+      "context": "Shown under the audio player when this page's saved audio could not be loaded or played. {error} is a technical message in English and is shown as-is."
+    },
+    "position": {
+      "message": "ቦታ ምጽዋት",
+      "context": "Screen-reader label on the waveform, which can be clicked to jump to a point in the audio."
     }
   },
   "modelPanel": {
@@ -699,6 +719,98 @@
     "confirm": {
       "message": "ደምስስ",
       "context": "Button. Permanently deletes the project. Destructive — this is the point of no return."
+    }
+  },
+  "voices": {
+    "accent": {
+      "american": {
+        "message": "ኣመሪካዊ",
+        "context": "Accent of an English voice, shown after the voice's name in the voice picker, e.g. 'Heart · American · Female'. An adjective describing the voice."
+      },
+      "british": {
+        "message": "እንግሊዛዊ",
+        "context": "Accent of an English voice, shown after the voice's name in the voice picker, e.g. 'George · British · Male'. An adjective describing the voice."
+      }
+    },
+    "gender": {
+      "female": {
+        "message": "ኣንስተይቲ",
+        "context": "Gender of a voice, shown after its name in the voice picker, e.g. 'Heart · American · Female'. An adjective describing the voice."
+      },
+      "male": {
+        "message": "ተባዕታይ",
+        "context": "Gender of a voice, shown after its name in the voice picker, e.g. 'Abebe · Male'. An adjective describing the voice."
+      }
+    },
+    "name": {
+      "am": {
+        "message": "ኣበበ",
+        "context": "A man's given name, used as the name of the single Amharic voice. Transliterate the name Abebe (አበበ) into the interface language's script; do not translate it."
+      },
+      "ti": {
+        "message": "ተስፋይ",
+        "context": "A man's given name, used as the name of the single Tigrigna voice. Transliterate the name Tesfay (ተስፋይ) into the interface language's script; do not translate it."
+      },
+      "om": {
+        "message": "ገመቹ",
+        "context": "A man's given name, used as the name of the single Afaan Oromoo voice. Transliterate the name Gemechu (ገመቹ / Gammachuu) into the interface language's script; do not translate it."
+      }
+    }
+  },
+  "find": {
+    "placeholder": {
+      "message": "ኣብዚ ገጽ ድለ",
+      "context": "Placeholder and screen-reader label of the find bar that searches the page being edited (Ctrl+F)."
+    },
+    "count": {
+      "message": "{current} ካብ {total}",
+      "context": "Shown beside the find field: which match is selected and how many the page has, e.g. '3 of 12'."
+    },
+    "none": {
+      "message": "ውጽኢት የለን",
+      "context": "Shown beside the find field when the page has no match."
+    },
+    "previous": {
+      "message": "ዝሓለፈ ውጽኢት",
+      "context": "Tooltip on the find bar's button that selects the previous match."
+    },
+    "next": {
+      "message": "ዝቕጽል ውጽኢት",
+      "context": "Tooltip on the find bar's button that selects the next match."
+    },
+    "close": {
+      "message": "ዕጸው",
+      "context": "Tooltip on the find bar's close button."
+    }
+  },
+  "search": {
+    "placeholder": {
+      "message": "ኣብዚ መጽሓፍ ድለ",
+      "context": "Placeholder and label of the floating book-wide search (Ctrl+Shift+F)."
+    },
+    "summary": {
+      "message": "{count} ውጽኢታት ኣብ {pages} ገጻት",
+      "context": "Shown beside the search field: how many matches, across how many pages. {count} and {pages} are numbers."
+    },
+    "none": {
+      "message": "ኣብዚ መጽሓፍ ውጽኢት የለን",
+      "context": "Shown when nothing in the book matches the search."
+    },
+    "page": {
+      "message": "ገጽ {n}",
+      "context": "Heading over a page's matches in the book search results. {n} is the page number."
+    },
+    "loading": {
+      "message": "መጽሓፍ ብምንባብ…",
+      "context": "Shown briefly while the book's text is read for searching."
+    },
+    "error": {
+      "message": "Enisma ናይዚ መጽሓፍ ጽሑፍ ከንብብ ኣይከኣለን፦ {error}",
+      "context": "Shown when the book's text could not be read for searching. {error} is a technical message in English and is shown as-is."
+    },
+    "hint": {
+      "message": "ኩሎም ገጻት ናይዚ መጽሓፍ ንምድላይ ጽሓፍ",
+      "context": "Shown in the empty book search window before anything is typed. An instruction."
     }
   }
 }
