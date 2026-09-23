@@ -76,9 +76,51 @@ def expand_numbers(text: str, language: str, romanize: Romanize) -> str:
     return text
 
 
+# Marks that already close a line as far as a pause goes: ASCII, and the
+# Ge'ez ones uroman folds onto ASCII.
+_LINE_ENDERS = ".!?:;,…።፧፣፤፥፦"
+
+
+def end_lines(text: str) -> str:
+    """Make every line break a sentence boundary, and flatten to one line.
+
+    Neither engine pauses at a line break: to the phonemizer and to sherpa-onnx
+    a newline is just whitespace, so a heading runs straight into the text
+    under it and a list is read as one breathless sentence. A line that does
+    not already end in punctuation gets a period, which both engines do stop
+    at. Safe because extraction already rejoins lines wrapped mid-sentence, so
+    a line break that survives into stored text marks a heading, a list item
+    or a paragraph — and one a user typed is a break they chose.
+
+    For the MMS languages the period also starts a new utterance, which is
+    what keeps a long page's synthesis cost linear.
+    """
+    lines = (line.strip() for line in text.splitlines())
+    return " ".join(
+        line if line[-1] in _LINE_ENDERS else f"{line}." for line in lines if line
+    )
+
+
+# A dot between digits: section numbers (1.4.1) and decimals (3.5).
+_DOTTED_NUMBER = re.compile(r"(?<=\d)\.(?=\d)")
+
+
+def prepare_english(text: str) -> str:
+    """What the Kokoro path phonemizes: line breaks as sentence ends, and
+    dotted numbers spelled with "point".
+
+    The phonemizer runs with punctuation preserved, because the punctuation
+    marks are what Kokoro pauses on — and in that mode it treats the dot in
+    "1.1" as a sentence end, reading "one. one" instead of "one point one".
+    Spelling the dot out keeps the number whole. It is also the input that used
+    to lose text: see `join_phonemized` in engine_kokoro.
+    """
+    return _DOTTED_NUMBER.sub(" point ", end_lines(text))
+
+
 def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
     """Full pipeline for the three MMS languages."""
-    expanded = expand_numbers(text, language, romanize)
+    expanded = expand_numbers(end_lines(text), language, romanize)
     # uroman has already folded the Ge'ez marks onto ASCII -- ። to '.', ፧ to
     # '?' -- so keeping those preserves the sentence boundaries sherpa-onnx
     # segments on. ፣ and ፤ become ',' and ';', which segment nothing and are

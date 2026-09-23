@@ -90,3 +90,15 @@ def test_a_maximal_chunk_still_has_a_style_row(tmp_path, monkeypatch):
         "abcdefgh" * 200, "af_heart", 1.0, str(tmp_path / "p.wav"), lambda f: True
     )
     assert engine._session.calls > 1
+
+
+def test_every_entry_the_phonemizer_returns_is_kept():
+    # phonemizer 3.4 split "Sections. 1.1 Definition of Biology." into two
+    # entries; keeping only the first deleted the rest of the sentence.
+    from engine_kokoro import join_phonemized
+
+    assert join_phonemized(["sˈɛkʃənz. wˈʌn. ", "wˈʌn dˌɛfɪnˈɪʃən ʌv baɪˈɑːlədʒi "]) == (
+        "sˈɛkʃənz. wˈʌn. wˈʌn dˌɛfɪnˈɪʃən ʌv baɪˈɑːlədʒi"
+    )
+    assert join_phonemized(["one"]) == "one"
+    assert join_phonemized(["", "  "]) == ""

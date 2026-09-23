@@ -19,7 +19,7 @@ import numpy as np
 from onnxruntime import InferenceSession
 
 from guards import assert_espeak_data_path
-from prepare import chunk_english
+from prepare import chunk_english, prepare_english
 from tts import write_wav
 
 SAMPLE_RATE = 24000
@@ -46,7 +46,20 @@ def _make_phonemizer() -> Callable[[str], str]:
     EspeakWrapper.set_library(espeakng_loader.get_library_path())
     EspeakWrapper.set_data_path(data_path)
     backend = EspeakBackend("en-us", preserve_punctuation=True, with_stress=True)
-    return lambda text: backend.phonemize([text])[0].strip()
+    return lambda text: join_phonemized(backend.phonemize([text]))
+
+
+def join_phonemized(parts: list[str]) -> str:
+    """Rejoin everything the phonemizer returned for ONE input string.
+
+    With punctuation preserved, phonemizer 3.4 can hand back more entries than
+    it was given: "Sections. 1.1 Definition of Biology." comes back as two,
+    split at the dot inside "1.1". Keeping only the first entry silently
+    deleted the rest of the sentence from the audio — measured on a real page,
+    "1.3 The scientific method … 1.4.2 Field tools 1.5." was voiced as "one."
+    Every entry is kept, in order, so nothing is ever dropped here.
+    """
+    return " ".join(p.strip() for p in parts if p.strip())
 
 
 class KokoroEngine:
@@ -66,7 +79,7 @@ class KokoroEngine:
         # Indexed by token count: 510 rows of (1, 256).
         styles = np.fromfile(style_path, dtype=np.float32).reshape(-1, 1, 256)
 
-        chunks = chunk_english(text, self._vocab, self._phonemize)
+        chunks = chunk_english(prepare_english(text), self._vocab, self._phonemize)
         if not chunks:
             raise RuntimeError("nothing left to speak after preparing the text")
 

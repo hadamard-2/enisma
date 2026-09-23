@@ -125,3 +125,11 @@ def test_prepare_folds_v_onto_b_because_no_model_has_a_v():
     out = prepare_geez("vidiyo Video", "am", fake_romanize)
     assert "v" not in out and "V" not in out
     assert "bidiyo" in out and "Bideo" in out
+
+
+def test_prepare_turns_line_breaks_into_utterance_boundaries():
+    # A newline is only whitespace to sherpa-onnx, so a heading ran into the
+    # text below it — and one unbroken run is also where synthesis cost stops
+    # being linear. Each line becomes its own utterance.
+    out = prepare_geez("ሓደ ነገር\nካልእ ነገር\n\nሳልሳይ ነገር።", "ti", fake_romanize)
+    assert out.count(".") == 3

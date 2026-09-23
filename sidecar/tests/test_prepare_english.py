@@ -91,3 +91,40 @@ def test_no_chunk_can_index_past_the_last_style_row():
     chunks = chunk_english(unbroken, VOCAB, fake_phonemize)
     assert max(len(c) for c in chunks) <= 509
     assert _spoken(_decode(chunks)) == _spoken(unbroken)
+
+
+# ---- Line breaks and dotted numbers -----------------------------------------
+
+from prepare import end_lines, prepare_english  # noqa: E402
+
+
+def test_a_line_break_becomes_a_sentence_end():
+    # Neither engine pauses at a bare newline, so a heading ran straight into
+    # the text under it.
+    assert end_lines("Sections\nDefinition of Biology") == "Sections. Definition of Biology."
+
+
+def test_a_line_that_already_ends_in_punctuation_is_left_alone():
+    assert end_lines("Why study it?\nIt is useful:\nfirst, second;") == (
+        "Why study it? It is useful: first, second;"
+    )
+
+
+def test_blank_lines_and_trailing_spaces_add_nothing():
+    assert end_lines("Unit 1 \n\n\n  Sections  \n") == "Unit 1. Sections."
+
+
+def test_geez_marks_count_as_line_ends():
+    assert end_lines("ሰላም።\nጥያቄ፧\nዝርዝር፣") == "ሰላም። ጥያቄ፧ ዝርዝር፣"
+
+
+def test_dotted_numbers_are_read_with_point():
+    # In punctuation-preserving mode the phonemizer takes the dot in "1.1" for
+    # a sentence end, which both misreads it and used to cost the rest of the
+    # sentence.
+    assert prepare_english("1.4.1 Laboratory tools") == "1 point 4 point 1 Laboratory tools."
+    assert prepare_english("It weighs 3.5 kg.") == "It weighs 3 point 5 kg."
+
+
+def test_a_dot_that_is_not_between_digits_is_kept():
+    assert prepare_english("Section 1.5.\nThe U.S. system.") == "Section 1 point 5. The U.S. system."
