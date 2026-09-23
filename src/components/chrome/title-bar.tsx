@@ -128,7 +128,11 @@ function AppMenus({
           disabled={!c.importPdf}
           onSelect={c.importPdf}
         />
-        <Item label={t("menu.exportAudiobook")} disabled onSelect={c.exportAudiobook} />
+        <Item
+          label={t("menu.exportAudiobook")}
+          disabled={!c.exportAudiobook}
+          onSelect={c.exportAudiobook}
+        />
         <Sep />
         <Item
           label={t("menu.quit")}

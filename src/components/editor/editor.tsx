@@ -47,6 +47,7 @@ import { reconcileVoice } from "@/lib/voice-selection";
 import { resumePage } from "@/lib/resume-page";
 import { formatShortcut, MOD, SHIFT_KEY, sidecarHealth } from "@/lib/platform";
 import { useRegisterCommands } from "@/lib/app-commands";
+import { useExport } from "@/components/export/export-provider";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -909,6 +910,16 @@ function Editor({
   // What the title bar's menus can do while the editor is on screen. The
   // callbacks close over refs and stable setters, so rebuilding this only when
   // the *displayed* state changes (the checkmarks) is enough.
+  const { openExport } = useExport();
+  // Export reads each page's text out of the database, so a keystroke still
+  // sitting out its debounce would be left out. Flush it before the dialog
+  // counts what is fresh, exactly as Convert does.
+  const startExportFlow = useCallback(async () => {
+    sendPending();
+    await writeChainRef.current.catch(() => {});
+    openExport(project.id);
+  }, [sendPending, openExport, project.id]);
+
   useRegisterCommands(
     useMemo(
       () => ({
@@ -924,8 +935,9 @@ function Editor({
         toggleLeftPanel: () => leftPanelRef.current && toggleLeft(),
         toggleRightPanel: () => rightPanelRef.current && toggleRight(),
         canZoom: view !== "edit",
+        exportAudiobook: () => void startExportFlow(),
       }),
-      [onBack, sendPending, activePage, activeDone, view],
+      [onBack, sendPending, activePage, activeDone, view, startExportFlow],
     ),
   );
 
