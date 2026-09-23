@@ -140,3 +140,62 @@ Written by Claude, not reviewed by a native speaker. `search.summary` uses ICU p
 |---|---|---|---|---|
 | `menu.find` | Find | ፈልግ | ድለ | Barbaadi |
 | `menu.findInBook` | Find in book | በመጽሐፉ ውስጥ ፈልግ | ኣብ መጽሓፍ ድለ | Kitaaba keessa barbaadi |
+
+## M5 export strings (2026-09-23)
+
+Every non-English `message` below was written by Claude, not a native speaker, and needs a native read. The `menu.exportAudiobook` context changed too (the message did not), so its existing translations are unchanged.
+
+**Priority:**
+
+- **Oromo `sagalee` means both "voice" and "audio"**, so `export.replacing` reads "sagalee sagalee …" ("audio of voice …"). It's intelligible but clumsy; a native speaker may prefer a distinct word for the audio (a recording) here.
+- **"synthesize" in `export.plan`** is rendered as "to be read (aloud)" in all three languages (`የሚነበቡ`, `ዝንበባ`, `kan dubbifamu`) rather than a technical term, matching the app's "read aloud" wording elsewhere. Check it reads as a count label.
+- **Oromo drops the plural wrapper** in `plan`, `replacing`, `emptyPages` and `cancelledBody`, per the catalogue rule. In `emptyPages` that means the singular noun `Fuulni {pages}` is used even for a list of pages; check that this reads naturally for "Pages 4, 7, 9".
+- **"Export" as a verb** follows the existing `menu.exportAudiobook` choice (`አውጣ`, `ኣውጽእ`, `baasi` — literally "take out"). If that menu item is reworded, these should follow.
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `export.title` | Export audiobook | የድምጽ መጽሐፍ አውጣ | ናይ ድምጺ መጽሓፍ ኣውጽእ | Kitaaba sagalee baasi |
+| `export.voice` | Voice | ድምጽ | ድምጺ | Sagalee |
+| `export.speed` | Speaking rate | የንግግር ፍጥነት | ናይ ንግግር ፍጥነት | Saffisa dubbii |
+| `export.pages` | Pages | ገጾች | ገጻት | Fuulota |
+| `export.wholeBook` | Whole book | ሙሉ መጽሐፉ | ምሉእ መጽሓፍ | Kitaaba guutuu |
+| `export.pageRange` | Pages | ገጾች | ገጻት | Fuulota |
+| `export.rangeTo` | to | እስከ | ክሳብ | hanga |
+| `export.plan` | {total, plural, one {# page} other {# pages}} · {ready} ready · {toSynthesize} to synthesize · {empty} empty | {total, plural, one {# ገጽ} other {# ገጾች}} · {ready} ዝግጁ · {toSynthesize} የሚነበቡ · {empty} ባዶ | {total, plural, one {# ገጽ} other {# ገጻት}} · {ready} ድሉዋት · {toSynthesize} ዝንበባ · {empty} ባዶ | Fuula {total} · {ready} qophaa'e · {toSynthesize} kan dubbifamu · {empty} duwwaa |
+| `export.replacing` | {count, plural, one {# page has audio in another voice or speed. Exporting replaces it.} other {# pages have audio in another voice or speed. Exporting replaces it.}} | {count, plural, one {# ገጽ በሌላ ድምጽ ወይም ፍጥነት የተሰራ ድምፅ አለው። ማውጣት ይተካዋል።} other {# ገጾች በሌላ ድምጽ ወይም ፍጥነት የተሰራ ድምፅ አላቸው። ማውጣት ይተካዋል።}} | {count, plural, one {# ገጽ ብካልእ ድምጺ ወይ ፍጥነት ዝተሰርሐ ድምጺ ኣለዎ። ምውጻእ ይትክኦ።} other {# ገጻት ብካልእ ድምጺ ወይ ፍጥነት ዝተሰርሐ ድምጺ ኣለወን። ምውጻእ ይትክኦ።}} | Fuulli {count} sagalee sagalee ykn saffisa biraatiin hojjetame qabu. Baasuun isa bakka buusa. |
+| `export.modelMissing` | Install the {language} voice from the audio panel before exporting. | ከማውጣትዎ በፊት የ{language} ድምጽን ከድምጽ ፓነሉ ይጫኑ። | ቅድሚ ምውጻእካ ናይ {language} ድምጺ ካብ ፓነል ድምጺ ኣውርድ። | Osoo hin baasin dura sagalee {language} paanaalii sagalee irraa fe'i. |
+| `export.nothingToExport` | Every page in this range is empty. | በዚህ ክልል ውስጥ ያሉት ሁሉም ገጾች ባዶ ናቸው። | ኣብዚ ክፍሊ ዘለዋ ኩለን ገጻት ባዶ እየን። | Fuulonni daangaa kana keessa jiran hundi duwwaa dha. |
+| `export.invalidRange` | Choose pages within this book. | በዚህ መጽሐፍ ውስጥ ያሉ ገጾችን ይምረጡ። | ኣብዚ መጽሓፍ ዘለዋ ገጻት ምረጽ። | Fuulota kitaaba kana keessa jiran filadhu. |
+| `export.cancel` | Cancel | ተወው | ሰርዝ | Dhiisi |
+| `export.start` | Export… | አውጣ… | ኣውጽእ… | Baasi… |
+| `export.progressTitle` | Exporting {title} | {title}ን በማውጣት ላይ | {title} ኣብ ምውጻእ | {title} baasaa jira |
+| `export.phaseStarting` | Getting ready… | በመዘጋጀት ላይ… | ኣብ ምድላው… | Qophaa'aa jira… |
+| `export.phaseReading` | Reading page {page} ({done} of {total}) | ገጽ {page}ን በማንበብ ላይ (ከ{total} {done}) | ገጽ {page} ኣብ ምንባብ ({done} ካብ {total}) | Fuula {page} dubbisaa jira ({total} keessaa {done}) |
+| `export.phaseChecking` | Checking for edits · page {page} | ለውጦችን በማረጋገጥ ላይ · ገጽ {page} | ለውጥታት ኣብ ምፍታሽ · ገጽ {page} | Jijjiirama mirkaneessaa jira · fuula {page} |
+| `export.phaseWriting` | Writing MP3 | MP3 በመጻፍ ላይ | MP3 ኣብ ምጽሓፍ | MP3 barreessaa jira |
+| `export.elapsed` | {time} elapsed | {time} አልፏል | {time} ሓሊፉ | {time} darbeera |
+| `export.timeLeft` | about {time} left | {time} ገደማ ቀርቷል | ዳርጋ {time} ተሪፉ | gara {time} hafeera |
+| `export.stop` | Cancel export | ማውጣቱን አቁም | ምውጻእ ኣቋርጽ | Baasuu dhaabi |
+| `export.stopping` | Stopping… | በማቆም ላይ… | ኣብ ምቁራጽ… | Dhaabaa jira… |
+| `export.hide` | Hide | ደብቅ | ሕባእ | Dhoksi |
+| `export.doneTitle` | Audiobook ready | የድምጽ መጽሐፉ ዝግጁ ነው | ናይ ድምጺ መጽሓፍ ድሉው እዩ | Kitaabni sagalee qophaa'eera |
+| `export.savedTo` | Saved to {path} | በ{path} ተቀምጧል | ኣብ {path} ተዓቂቡ | {path} irratti olkaa'ameera |
+| `export.duration` | Length {time} | ርዝመት {time} | ንውሓት {time} | Dheerina {time} |
+| `export.showInFolder` | Show in folder | በአቃፊ ውስጥ አሳይ | ኣብ ፎልደር ኣርኢ | Kuusaa keessatti agarsiisi |
+| `export.emptyPages` | {count, plural, one {Page {pages} had no text and was skipped.} other {Pages {pages} had no text and were skipped.}} | {count, plural, one {ገጽ {pages} ጽሑፍ ስላልነበረው ተዘልሏል።} other {ገጾች {pages} ጽሑፍ ስላልነበራቸው ተዘልለዋል።}} | {count, plural, one {ገጽ {pages} ጽሑፍ ስለዘይነበሮ ተሳጊሩ።} other {ገጻት {pages} ጽሑፍ ስለዘይነበረን ተሳጊረን።}} | Fuulni {pages} barreeffama waan hin qabneef irra darbameera. |
+| `export.failedTitle` | Some pages could not be read | አንዳንድ ገጾች ሊነበቡ አልቻሉም | ገለ ገጻት ክንበባ ኣይከኣላን | Fuulonni tokko tokko dubbifamuu hin dandeenye |
+| `export.failedBody` | Fix these pages and export again. Only they will be read again. | እነዚህን ገጾች አስተካክለው እንደገና ያውጡ። እንደገና የሚነበቡት እነሱ ብቻ ናቸው። | ነዘን ገጻት ኣዐርየን ደጊምካ ኣውጽእ። ደጊመን ዝንበባ ንሳተን ጥራይ እየን። | Fuulota kana sirreessiitii irra deebi'ii baasi. Isaan qofatu irra deebi'amee dubbifama. |
+| `export.pageLink` | Page {n} | ገጽ {n} | ገጽ {n} | Fuula {n} |
+| `export.cancelledTitle` | Export stopped | ማውጣቱ ቆሟል | ምውጻእ ተቋሪጹ | Baasuun dhaabbateera |
+| `export.cancelledBody` | {count, plural, one {# page was finished and is kept.} other {# pages were finished and are kept.}} | {count, plural, one {# ገጽ ተጠናቅቆ ተቀምጧል።} other {# ገጾች ተጠናቅቀው ተቀምጠዋል።}} | {count, plural, one {# ገጽ ተዛዚሙ ተዓቂቡ ኣሎ።} other {# ገጻት ተዛዚመን ተዓቂበን ኣለዋ።}} | Fuulni {count} xumuramee olkaa'ameera. |
+| `export.errorTitle` | Export stopped | ማውጣቱ ቆሟል | ምውጻእ ተቋሪጹ | Baasuun dhaabbateera |
+| `export.errorBody` | Finished pages are kept. Export again to continue. | የተጠናቀቁ ገጾች ተቀምጠዋል። ለመቀጠል እንደገና ያውጡ። | ዝተዛዘማ ገጻት ተዓቂበን ኣለዋ። ንምቕጻል ደጊምካ ኣውጽእ። | Fuulonni xumuraman olkaa'amaniiru. Itti fufuuf irra deebi'ii baasi. |
+| `export.close` | Close | ዝጋ | ዕጸው | Cufi |
+| `export.again` | Export again | እንደገና አውጣ | ደጊምካ ኣውጽእ | Irra deebi'ii baasi |
+| `export.pillRunning` | Exporting · {percent}% | በማውጣት ላይ · {percent}% | ኣብ ምውጻእ · {percent}% | Baasaa jira · {percent}% |
+| `export.pillReady` | Export ready | ማውጣቱ ዝግጁ ነው | ምውጻእ ድሉው እዩ | Baasuun qophaa'eera |
+| `export.pillAttention` | Export needs attention | ማውጣቱ ትኩረት ይፈልጋል | ምውጻእ ኣቓልቦ የድልዮ | Baasuun xiyyeeffannaa barbaada |
+| `export.quitTitle` | An export is running | ማውጣት በሂደት ላይ ነው | ምውጻእ ይካየድ ኣሎ | Baasuun adeemsa irra jira |
+| `export.quitBody` | Quit anyway? Finished pages are kept, and exporting again continues from there. | ቢሆንም ይውጡ? የተጠናቀቁ ገጾች ይቀመጣሉ፣ እንደገና ሲያወጡ ከዚያ ይቀጥላል። | ብዝኾነ ክትወጽእ? ዝተዛዘማ ገጻት ይዕቀባ፣ ደጊምካ ምስ ኣውጻእካ ካብኡ ይቕጽል። | Ta'us baatta? Fuulonni xumuraman ni olkaa'amu, irra deebitee yoo baaste achii itti fufa. |
+| `export.keepExporting` | Keep exporting | ማውጣቱን ቀጥል | ምውጻእ ቀጽል | Baasuu itti fufi |
+| `export.quitAnyway` | Quit | ውጣ | ውጻእ | Bahi |

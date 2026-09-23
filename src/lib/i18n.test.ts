@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import amCatalogue from "@/locales/am.json";
+import enCatalogue from "@/locales/en.json";
+import omCatalogue from "@/locales/om.json";
+import tiCatalogue from "@/locales/ti.json";
 import i18n from "./i18n";
 
 /**
@@ -71,5 +75,27 @@ describe("i18n", () => {
       expect(i18n.t("appLanguage.am")).toBe("አማርኛ · Amharic");
     }
     await i18n.changeLanguage("en");
+  });
+});
+
+function leafKeys(node: Record<string, unknown>, prefix = ""): string[] {
+  return Object.entries(node).flatMap(([k, v]) => {
+    if (k === "_meta") return [];
+    const path = prefix ? `${prefix}.${k}` : k;
+    const isEntry = typeof v === "object" && v !== null && "message" in v;
+    return isEntry ? [path] : leafKeys(v as Record<string, unknown>, path);
+  });
+}
+
+describe("catalogues", () => {
+  it("every language carries exactly the English keys", () => {
+    const en = leafKeys(enCatalogue).sort();
+    for (const [code, cat] of [
+      ["am", amCatalogue],
+      ["ti", tiCatalogue],
+      ["om", omCatalogue],
+    ] as const) {
+      expect(leafKeys(cat).sort(), code).toEqual(en);
+    }
   });
 });

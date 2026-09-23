@@ -248,7 +248,7 @@
     },
     "exportAudiobook": {
       "message": "የድምጽ መጽሐፍ አውጣ…",
-      "context": "File menu item, currently always disabled. The ellipsis signals that a dialog follows — keep it."
+      "context": "File menu item. Opens the Export dialog for the open book, or the export's progress if one is running. Enabled only inside a book. The ellipsis signals that a dialog follows — keep it."
     },
     "quit": {
       "message": "ውጣ",
@@ -555,6 +555,188 @@
     "position": {
       "message": "የማጫወቻ ቦታ",
       "context": "Screen-reader label on the waveform, which can be clicked to jump to a point in the audio."
+    }
+  },
+  "export": {
+    "title": {
+      "message": "የድምጽ መጽሐፍ አውጣ",
+      "context": "Title of the Export dialog, where the user chooses voice, speed and pages before saving an MP3."
+    },
+    "voice": {
+      "message": "ድምጽ",
+      "context": "Label above the voice picker in the Export dialog."
+    },
+    "speed": {
+      "message": "የንግግር ፍጥነት",
+      "context": "Label above the speed slider in the Export dialog."
+    },
+    "pages": {
+      "message": "ገጾች",
+      "context": "Label above the page-range choice in the Export dialog."
+    },
+    "wholeBook": {
+      "message": "ሙሉ መጽሐፉ",
+      "context": "Radio option in the Export dialog: export every page."
+    },
+    "pageRange": {
+      "message": "ገጾች",
+      "context": "Radio option in the Export dialog: export only the pages typed in the two boxes after it."
+    },
+    "rangeTo": {
+      "message": "እስከ",
+      "context": "Word between the two page-number boxes, as in 'Pages 10 to 20'."
+    },
+    "plan": {
+      "message": "{total, plural, one {# ገጽ} other {# ገጾች}} · {ready} ዝግጁ · {toSynthesize} የሚነበቡ · {empty} ባዶ",
+      "context": "One-line summary under the settings in the Export dialog. 'ready' pages already have matching audio and are reused; 'to synthesize' pages will be read aloud now; 'empty' pages have no text and are skipped."
+    },
+    "replacing": {
+      "message": "{count, plural, one {# ገጽ በሌላ ድምጽ ወይም ፍጥነት የተሰራ ድምፅ አለው። ማውጣት ይተካዋል።} other {# ገጾች በሌላ ድምጽ ወይም ፍጥነት የተሰራ ድምፅ አላቸው። ማውጣት ይተካዋል።}}",
+      "context": "Warning in the Export dialog when exporting will overwrite audio the user made earlier with different settings."
+    },
+    "modelMissing": {
+      "message": "ከማውጣትዎ በፊት የ{language} ድምጽን ከድምጽ ፓነሉ ይጫኑ።",
+      "context": "Shown in the Export dialog, instead of enabling Export, when pages need reading aloud and the book's voice model is not installed. {language} is a language name."
+    },
+    "nothingToExport": {
+      "message": "በዚህ ክልል ውስጥ ያሉት ሁሉም ገጾች ባዶ ናቸው።",
+      "context": "Shown in the Export dialog when the chosen pages contain no text at all."
+    },
+    "invalidRange": {
+      "message": "በዚህ መጽሐፍ ውስጥ ያሉ ገጾችን ይምረጡ።",
+      "context": "Shown in the Export dialog when the typed page range is out of order or outside the book."
+    },
+    "cancel": {
+      "message": "ተወው",
+      "context": "Button that closes the Export dialog without exporting."
+    },
+    "start": {
+      "message": "አውጣ…",
+      "context": "Main button of the Export dialog. Opens a Save dialog, then starts exporting. The ellipsis signals that a dialog follows — keep it."
+    },
+    "progressTitle": {
+      "message": "{title}ን በማውጣት ላይ",
+      "context": "Title of the export progress view. {title} is the book's title."
+    },
+    "phaseStarting": {
+      "message": "በመዘጋጀት ላይ…",
+      "context": "Export progress line before the first page starts."
+    },
+    "phaseReading": {
+      "message": "ገጽ {page}ን በማንበብ ላይ (ከ{total} {done})",
+      "context": "Export progress line while pages are read aloud for the first time. {done} of {total} counts only the pages being read now, not reused ones."
+    },
+    "phaseChecking": {
+      "message": "ለውጦችን በማረጋገጥ ላይ · ገጽ {page}",
+      "context": "Export progress line while re-reading pages the user edited during the export."
+    },
+    "phaseWriting": {
+      "message": "MP3 በመጻፍ ላይ",
+      "context": "Export progress line while the pages are joined into the final file."
+    },
+    "elapsed": {
+      "message": "{time} አልፏል",
+      "context": "Time since the export started, e.g. '12:04 elapsed'. {time} is already formatted."
+    },
+    "timeLeft": {
+      "message": "{time} ገደማ ቀርቷል",
+      "context": "Rough estimate of remaining export time. {time} is already formatted."
+    },
+    "stop": {
+      "message": "ማውጣቱን አቁም",
+      "context": "Button in the progress view that stops the export. Finished pages are kept."
+    },
+    "stopping": {
+      "message": "በማቆም ላይ…",
+      "context": "Replaces the Cancel export button after it is pressed, until the export actually stops."
+    },
+    "hide": {
+      "message": "ደብቅ",
+      "context": "Button that closes the progress view while the export keeps running."
+    },
+    "doneTitle": {
+      "message": "የድምጽ መጽሐፉ ዝግጁ ነው",
+      "context": "Title of the summary after a successful export."
+    },
+    "savedTo": {
+      "message": "በ{path} ተቀምጧል",
+      "context": "Where the MP3 was written. {path} is a file path; do not translate it."
+    },
+    "duration": {
+      "message": "ርዝመት {time}",
+      "context": "Length of the finished audiobook. {time} is already formatted, e.g. 2:03:10."
+    },
+    "showInFolder": {
+      "message": "በአቃፊ ውስጥ አሳይ",
+      "context": "Button that opens the file manager at the exported MP3."
+    },
+    "emptyPages": {
+      "message": "{count, plural, one {ገጽ {pages} ጽሑፍ ስላልነበረው ተዘልሏል።} other {ገጾች {pages} ጽሑፍ ስላልነበራቸው ተዘልለዋል።}}",
+      "context": "Summary note listing pages left out because they have no text. {pages} is a comma-separated list of page numbers."
+    },
+    "failedTitle": {
+      "message": "አንዳንድ ገጾች ሊነበቡ አልቻሉም",
+      "context": "Title of the summary when some pages failed. Nothing was saved."
+    },
+    "failedBody": {
+      "message": "እነዚህን ገጾች አስተካክለው እንደገና ያውጡ። እንደገና የሚነበቡት እነሱ ብቻ ናቸው።",
+      "context": "Explains the failed-pages list: pages already read are kept."
+    },
+    "pageLink": {
+      "message": "ገጽ {n}",
+      "context": "Link to a failed page in the export summary. Opens that page in the editor."
+    },
+    "cancelledTitle": {
+      "message": "ማውጣቱ ቆሟል",
+      "context": "Title of the summary after the user cancelled."
+    },
+    "cancelledBody": {
+      "message": "{count, plural, one {# ገጽ ተጠናቅቆ ተቀምጧል።} other {# ገጾች ተጠናቅቀው ተቀምጠዋል።}}",
+      "context": "After a cancel: how many pages were read aloud and saved, so exporting again continues from there."
+    },
+    "errorTitle": {
+      "message": "ማውጣቱ ቆሟል",
+      "context": "Title of the summary after the export failed for a reason that is not a single page."
+    },
+    "errorBody": {
+      "message": "የተጠናቀቁ ገጾች ተቀምጠዋል። ለመቀጠል እንደገና ያውጡ።",
+      "context": "Shown under the error message after a failed export."
+    },
+    "close": {
+      "message": "ዝጋ",
+      "context": "Button that closes the export summary."
+    },
+    "again": {
+      "message": "እንደገና አውጣ",
+      "context": "Button in the failed-pages summary that reopens the Export dialog with the same settings."
+    },
+    "pillRunning": {
+      "message": "በማውጣት ላይ · {percent}%",
+      "context": "Small title-bar indicator while an export runs. Click opens the progress view."
+    },
+    "pillReady": {
+      "message": "ማውጣቱ ዝግጁ ነው",
+      "context": "Title-bar indicator after an export finished. Click opens the summary."
+    },
+    "pillAttention": {
+      "message": "ማውጣቱ ትኩረት ይፈልጋል",
+      "context": "Title-bar indicator after an export failed or some pages could not be read. Click opens the summary."
+    },
+    "quitTitle": {
+      "message": "ማውጣት በሂደት ላይ ነው",
+      "context": "Title of the confirmation shown when the user closes the window during an export."
+    },
+    "quitBody": {
+      "message": "ቢሆንም ይውጡ? የተጠናቀቁ ገጾች ይቀመጣሉ፣ እንደገና ሲያወጡ ከዚያ ይቀጥላል።",
+      "context": "Body of the close-window confirmation during an export."
+    },
+    "keepExporting": {
+      "message": "ማውጣቱን ቀጥል",
+      "context": "Button that dismisses the close-window confirmation and keeps the app open."
+    },
+    "quitAnyway": {
+      "message": "ውጣ",
+      "context": "Button that stops the export and closes the app."
     }
   },
   "modelPanel": {
