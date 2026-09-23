@@ -17,7 +17,7 @@ React (Tauri webview)  ──invoke──▶  Rust / Tauri core  ──loopback 
   • UI                                • SQLite project store               • Kokoro on onnxruntime + espeak-ng → English TTS (multi-voice)
   • pdf.js rendering                  • spawns + supervises sidecar        • sherpa-onnx + uroman → MMS TTS (am / ti / om)
   • pdf.js text extraction (import)   • owns app-data files                • model download / install + verification
-  • editor / settings / playback      • typed command wrappers             • (M5) MP3 stitch/encode for export
+  • editor / settings / playback      • typed command wrappers             • MP3 stitch/encode for export (lameenc)
 ```
 
 **Why a Python sidecar:** the proven MMS-TTS path (`../amharic-speech-models`) is `sherpa-onnx` + `uroman` in Python, and uroman exists only as a Python package, so Python is mandatory for three of the four languages. English runs in the same process so there is one inference runtime and one packaging story. (docling was the other original reason; it left in M3, when extraction moved to pdf.js in the webview.)
@@ -200,9 +200,10 @@ On-disk layout under the app data dir:
   enisma.db
   projects/<id>/source.pdf
   projects/<id>/audio/page-<n>.wav
-  projects/<id>/export/…                (M5; not yet decided)
   models/{en, am, ti, om}/
 ```
+
+Exports are written wherever the user saves them through the Save picker, so nothing lives under the project folder for them. The `projects` row instead gains five nullable `export_*` columns (migration v4): `export_voice TEXT, export_rate REAL, export_first_page INTEGER, export_last_page INTEGER, export_path TEXT`, written when an export starts and read back to prefill the dialog on the next one.
 
 Home reads `projects`; the editor reads and writes `pages`; the settings panel persists its voice and rate to the `projects` row.
 
@@ -214,17 +215,9 @@ Home reads `projects`; the editor reads and writes `pages`; the settings panel p
 
 **Decided in the M4 design, binding here.** Voice and rate are not book settings. The right-hand panel is a scratchpad; export chooses its own voice, rate and **page range** per export, defaulting to the panel's remembered voice and rate so that existing takes are likely to match and be reused.
 
-**What M5 has to build.** An export dialog (voice, rate, range); a pass that synthesizes every page in range whose take is missing or stale for the chosen voice and rate and reuses the rest; concatenation; MP3 encoding; progress and cancel across the whole run. Language is per project, so one export has one engine and one sample rate (Kokoro 24 kHz, MMS 16 kHz) — assert it rather than assume it.
-
 **Scale.** The M4 spike extrapolated roughly **2 hours for English and 4.7 hours for Amharic** across the 171-page sample book. Making Kokoro chunks smaller made Stop quicker but did not change total time. An export is a multi-hour job, so cancelling, resuming and surviving an app restart are core requirements, not polish.
 
-**Open questions — not decided:**
-
-1. **Where the page loop lives.** Rust could drive one `/jobs/tts` per page, so each finished page is persisted as it lands (a cancel or crash loses at most one page and a re-run picks up the rest through the existing freshness check). Alternatively, one sidecar export job would give a single progress stream, but the sidecar would then have to write the per-page records that Rust owns today.
-2. **Whether export takes replace the page's preview take.** M4 keeps one take per page. If export writes back, an export in a different voice overwrites what the user was previewing; if it doesn't, an interrupted export has nothing to resume from.
-3. **How export coexists with the editor.** The app refuses a second conversion while one is running, and M4 lets the user edit other pages during a conversion. A page edited mid-export is stale by the time it is stitched.
-4. **The MP3 encoder.** Nothing in the sidecar's dependencies encodes MP3 yet. Any candidate — a libmp3lame binding or ffmpeg — is unverified: check its licence, whether it ships wheels on every target platform, and its frozen size before choosing. Bitrate and channel count are also still open.
-5. **Pages with no text** — skip them silently, or list them in the export summary.
+**Built in M5.** See [docs/superpowers/specs/2026-09-23-m5-export-design.md](./superpowers/specs/2026-09-23-m5-export-design.md) for the full design and its testing and acceptance criteria. In summary: each page's export take lives in the page's own slot, shared with Convert, so resuming is exporting again and comes free from the existing freshness check; Rust drives the page loop, running a sweep after the range finishes to catch pages edited behind it, and a further re-check after stitching that fails the run if a page reverted to a failed text meanwhile; `lameenc` in the sidecar encodes at 64 kbps CBR mono, at the takes' native sample rate, with an ID3v2.3 title frame; a page that fails to synthesize stops the run before stitching, with the failed pages listed; empty pages are skipped and listed in the summary rather than stopping the run.
 
 An export meets every page in the book, not only the one the user is looking at, so an MMS page with no sentence marks is likelier to turn up here; the utterance cap in `prepare_geez` (see §3) keeps it bounded.
 
@@ -271,13 +264,13 @@ An export meets every page in the book, not only the one the user is looking at,
 
 ## Frontend wiring
 
-All of the original hook points are wired except export:
+All of the original hook points are wired:
 
 - `src/components/home/home.tsx` — real `projects`; import by button or drop; rename and delete. **Done.**
 - `src/components/editor/center-panel.tsx` — pdf.js render, extracted/edited text, autosave, undo/redo, find on page. **Done.**
 - `src/components/editor/settings-panel.tsx` — real voice list (English; a single named voice for MMS), rate, per-page conversion with progress and cancel, Web Audio playback with a waveform; pitch slider removed. **Done.**
 - `src/components/editor/page-panel.tsx` — real done/remaining counts from `pages.done`. **Done.**
-- Export — the title-bar menu's **Export audiobook** item exists but is disabled. **M5.**
+- Export — the title-bar menu's **Export audiobook…** item, the export dialog, progress view and title-bar pill. **Done.**
 
 ## Milestones (each independently reviewable & testable)
 
@@ -286,12 +279,12 @@ All of the original hook points are wired except export:
 - [x] **M2 — PDF render.** pdf.js in the preview/side-by-side panels (real pages, not mock).
 - [x] **M3 — Extraction.** *Narrowed:* pdf.js text-layer extraction at import for all four languages, with paragraph reflow and header/footer removal; no docling and no OCR. See §2.
 - [x] **M4 — TTS preview.** Kokoro (en) + MMS (am/ti/om) as polled jobs; per-page conversion with progress, cancel and freshness tracking; real English voice list; Web Audio playback; the download slice of M6 (resumable, verified, install from folder); a frozen sidecar.
-- [ ] **M5 — Export.** Per-export voice, rate and page range; synthesize missing or stale pages, reuse fresh ones; stitch and encode to MP3; progress and cancel across a multi-hour run. Per-page caching already exists from M4. See §6, including its open questions.
+- [x] **M5 — Export.** Per-export voice, rate and page range; synthesize missing or stale pages, reuse fresh ones; stitch and encode to MP3; progress and cancel across a multi-hour run. Per-page caching already exists from M4. See §6 and the [M5 design doc](./superpowers/specs/2026-09-23-m5-export-design.md).
 - [ ] **M6 — Download completion + packaging.** Most of the download handler shipped in M4. What remains: revision-pinned URLs, removing a language, deciding on auto-retry and auto-resume, making `tauri build` build the sidecar, Windows and macOS builds, and measuring startup. See §7.
 
 ## Risks & things to verify at implementation time
 
-- **Pin every package/API against the actually-installed version** before coding (per project convention). For M5 that is chiefly the MP3 encoder, which has not been chosen. Treat names in this plan as intent to verify, not gospel — M3 and M4 both ended up without a library this plan named (docling, `kokoro-onnx`, misaki).
+- **Pin every package/API against the actually-installed version** before coding (per project convention). M5's encoder is `lameenc` 1.8.4 in the sidecar, verified against the frozen binary (see the M5 design doc's Verified environment facts). Treat names in this plan as intent to verify, not gospel — M3 and M4 both ended up without a library this plan named (docling, `kokoro-onnx`, misaki).
 - **Bundle size.** *Largely retired.* This was a docling/PyTorch concern, and docling left in M3. The frozen TTS sidecar is about 160 MB with no torch. Models are first-run downloads: 326 MB for English and 114 MB for each MMS language. What is still unmeasured is the onefile's per-launch unpack cost (§7).
 - **TTS romanization quality.** *Mostly retired.* The M4 spike found uroman transliterates Ge'ez cleanly and Oromo is already Latin; the problems that actually surfaced were dropped digits, `v`, lost sentence marks and symbols, all recorded under §3. What remains open is listening to real Ethiopian textbook prose, which has still barely been through the pipeline.
 - **English G2P / phonemizer bundling.** *Retired in M4.* misaki was not adopted, because it pulls in spacy and torch. English uses espeak-ng through `espeakng-loader`, whose wheel carries both the library and its data, and the frozen spec collects them explicitly. What was left of this risk turned out to be the 159-character data-path limit, which is now guarded (§7).

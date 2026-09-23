@@ -21,7 +21,7 @@ Enisma is designed to run **fully offline**. Apart from a one-time model downloa
 
 ## Current state
 
-Persistence, PDF import, text extraction from the PDF's text layer, PDF rendering, and per-page TTS are real; OCR and export are not. See the README roadmap, and `docs/implementation-plan.md` for the milestones (M5 export and M6 download completion plus packaging remain).
+Persistence, PDF import, text extraction from the PDF's text layer, PDF rendering, per-page TTS, and export are real; OCR is not. See the README roadmap, and `docs/implementation-plan.md` for the milestones (M6 download completion plus packaging remains).
 
 - **Persistence:** SQLite via `rusqlite` (`src-tauri/src/db.rs`), in the app data directory as `enisma.db`, with schema migrations keyed on `PRAGMA user_version`. Projects and pages are stored; a project's status is derived from its pages, never stored. The front-end reaches it only through the Tauri commands in `src-tauri/src/project.rs`, wrapped in `src/lib/api.ts`.
 - **Import:** a picked PDF is page-counted with `lopdf` (`src-tauri/src/pdf.rs`) and copied to `projects/<uuid>/source.pdf` under the app data directory, and its project and page rows are created in one transaction (`src-tauri/src/import.rs`). Re-importing the same file creates an independent project.
@@ -32,7 +32,8 @@ Persistence, PDF import, text extraction from the PDF's text layer, PDF renderin
 - **Playback:** the player fetches a take, decodes the WAV itself (`src/lib/waveform.ts`), and plays it through Web Audio — never through an `<audio>` element. WebKitGTK's media stack on Linux refuses Tauri's `asset:` scheme, and even given a `blob:` URL it misplaces seeks: it reports the requested position while sounding from somewhere else. The same samples feed the waveform.
 - **Models:** downloaded once per language from Hugging Face, or installed from a folder for machines with no connection (`sidecar/models.py`, `src-tauri/src/models.rs`). Files are checked against SHA-256 hashes in `sidecar/models.json`, downloads resume where they stopped, and they go in `models/<lang>/` under the app data directory — Rust passes this path in as `HEARBOOK_MODELS_DIR`. The editor offers the download only when a page needs a language that isn't installed.
 - **MMS limits:** the MMS languages cannot speak symbols (`%`, `$`, `°` are silently dropped) or superscript/fraction numerals (they stop the page with an error). Their properties are measured in the §3 notes of `docs/implementation-plan.md` — read that before changing `prepare.py`.
-- **Not implemented yet:** OCR in any language (a page with no text layer stays empty) and export (the **Export audiobook** menu item is disabled). `bun run tauri build` does not rebuild the sidecar — run `scripts/build-sidecar.sh` first, or the bundle ships whatever binary is already in `src-tauri/binaries/`.
+- **Export:** the title bar's **Export audiobook…** dialog picks a voice, rate and page range, then a Rust background task synthesizes what's missing or stale, reuses the rest, and stitches the range to one MP3 via `POST /jobs/stitch` in the sidecar (`lameenc`, 64 kbps CBR mono, ID3v2.3 title). Progress shows in a dedicated view and a title-bar pill; there is no export record, so resuming a cancelled or interrupted run means exporting again — the existing per-page freshness check picks up only what's left. Closing the window mid-export asks for confirmation first.
+- **Not implemented yet:** OCR in any language (a page with no text layer stays empty). `bun run tauri build` does not rebuild the sidecar — run `scripts/build-sidecar.sh` first, or the bundle ships whatever binary is already in `src-tauri/binaries/`.
 
 ## Tech stack & conventions
 

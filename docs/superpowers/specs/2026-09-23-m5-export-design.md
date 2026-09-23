@@ -1,6 +1,12 @@
 # M5 — Export
 
-> **Status:** design, pending review. **Date:** 2026-09-23. Covers milestone M5 (export) from [docs/implementation-plan.md](../../implementation-plan.md), and settles the five open questions in its §6. It builds on the per-page takes and freshness record from [the M4 design](./2026-09-20-m4-tts-design.md). Internal name **HearBook**; user-facing name **Enisma**.
+> **Status:** implemented. **Date:** 2026-09-23. Covers milestone M5 (export) from [docs/implementation-plan.md](../../implementation-plan.md), and settles the five open questions in its §6. It builds on the per-page takes and freshness record from [the M4 design](./2026-09-20-m4-tts-design.md). Internal name **HearBook**; user-facing name **Enisma**.
+>
+> **Deviations from this design, found during implementation:**
+> - When pages need synthesis and the language's model is missing, the dialog does not offer the download in-dialog as originally written; it shows a message pointing to the audio panel's download offer instead (see Frontend → Dialog below).
+> - Time left in the progress view is shown as `h:mm:ss`, not "about N min left".
+> - The post-stitch freshness re-check (Architecture, phase 3) does more than re-synthesize stale pages: if a page has reverted to a failed text by that point, the run now fails instead of stitching.
+> - `delete_project` holds the conversion-slot lock across both its "is this project exporting" guard and the delete itself, rather than releasing it between the two.
 
 ## What changed since the implementation plan
 
@@ -151,7 +157,7 @@ New module `src-tauri/src/export.rs`, with pure logic kept apart from the Tauri 
 ## Frontend
 
 - **Entry.** The title bar's **Export audiobook…** item is enabled inside a project's editor, through `app-commands`. While that project is exporting, the item opens the progress view.
-- **Dialog.** Voice and rate use the panel's controls and helpers (`voice-label`, `voice-selection`). Range is *Whole book* or *Pages [from]–[to]*, limited to 1…page count. Defaults come from the last export, then the panel's voice and rate, then the whole book. A plan line comes from `export_plan_cmd` and updates whenever a setting changes: `171 pages · 140 ready · 28 to synthesize · 3 empty`. When takes would be replaced, a warning appears: *"12 pages have audio in another voice or speed. Exporting replaces it."* If pages need synthesis and the language's model is missing, Export is disabled and the existing download offer is shown. **Export…** opens the Save picker (`.mp3`, named from the last path or `<title>.mp3`) and then starts.
+- **Dialog.** Voice and rate use the panel's controls and helpers (`voice-label`, `voice-selection`). Range is *Whole book* or *Pages [from]–[to]*, limited to 1…page count. Defaults come from the last export, then the panel's voice and rate, then the whole book. A plan line comes from `export_plan_cmd` and updates whenever a setting changes: `171 pages · 140 ready · 28 to synthesize · 3 empty`. When takes would be replaced, a warning appears: *"12 pages have audio in another voice or speed. Exporting replaces it."* If pages need synthesis and the language's model is missing, Export is disabled and a message pointing to the audio panel's download offer is shown (the download itself stays in the editor's panel, where its state lives). **Export…** opens the Save picker (`.mp3`, named from the last path or `<title>.mp3`) and then starts.
 - **Progress view.** The same dialog, mounted at the app root so it opens from any screen. It shows the phase line (*Reading page 37 (12 of 28)* / *Checking for edits* / *Writing MP3*), an overall bar and a bar for the current page, the elapsed time, and *about N min left* once three pages have finished. The estimate is this run's mean seconds per page times the pages left. There is **Cancel export**, with no confirmation, and **Hide**.
 - **Title-bar pill.** It shows on every screen while an export runs or an unseen result waits: *Exporting · 37%*, *Export ready*, or *Export needs attention* (for a failed or stopped run). A cancelled run shows no pill, since the user just asked for it. Clicking the pill opens the view.
 - **Summary.** Done: the path, the duration, **Show in folder** (through the opener plugin; the API to be verified), and the empty pages. Failed: each page with its message, where a page links to that page in the editor, plus **Export again**. Cancelled: pages kept. Error: the message, plus "finished pages are kept."
@@ -182,14 +188,16 @@ New module `src-tauri/src/export.rs`, with pure logic kept apart from the Tauri 
 
 ## Acceptance criteria
 
-1. A small English range exports to an MP3 that plays in at least two players, with working seeking and the project title shown.
-2. Cancelling halfway and exporting again synthesizes only the remaining pages.
-3. Quitting mid-run asks first. After relaunching, the dialog's counts pick up where the run stopped.
-4. A page edited behind the loop is spoken in its edited form in the final MP3.
-5. An Amharic page containing `²` fails. The run finishes the other pages, lists that page, and does not stitch. After it is fixed, exporting again redoes only that page.
-6. Exporting in a voice other than the panel's warns first, and afterwards the panel shows the replaced pages as stale for its own voice.
-7. The full 4.7-hour Amharic sample range stitches successfully, and the encode time is recorded in this document.
-8. The frozen sidecar exports.
+Criteria 1–7 require a hand run of `bun run tauri dev` and are recorded below as **pending manual run**, not as passed. Criterion 8 (the frozen sidecar exports) is verified separately below.
+
+1. A small English range exports to an MP3 that plays in at least two players, with working seeking and the project title shown. **Result: pending manual run.**
+2. Cancelling halfway and exporting again synthesizes only the remaining pages. **Result: pending manual run.**
+3. Quitting mid-run asks first. After relaunching, the dialog's counts pick up where the run stopped. **Result: pending manual run.**
+4. A page edited behind the loop is spoken in its edited form in the final MP3. **Result: pending manual run.**
+5. An Amharic page containing `²` fails. The run finishes the other pages, lists that page, and does not stitch. After it is fixed, exporting again redoes only that page. **Result: pending manual run.**
+6. Exporting in a voice other than the panel's warns first, and afterwards the panel shows the replaced pages as stale for its own voice. **Result: pending manual run.**
+7. The full 4.7-hour Amharic sample range stitches successfully, and the encode time is recorded in this document. **Result: pending manual run.**
+8. The frozen sidecar exports. **Result: verified 2026-09-23 — `scripts/build-sidecar.sh` rebuilt the frozen binary, and a `/jobs/stitch` call against it finished `state: done`, `durationMs: 2600`, writing a 21,631-byte MP3. `lameenc` was already collected by PyInstaller; no spec change was needed.**
 
 ## Risks
 

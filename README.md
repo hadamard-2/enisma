@@ -8,7 +8,7 @@ Enisma is aimed at making educational material more accessible — its sample co
 
 Enisma is designed to run **fully offline**. Apart from a one-time download of each language's voice model, the entire pipeline — text extraction, text-to-speech, and export — runs on-device with no network connection required, and your textbooks never leave your machine.
 
-> **Status:** early development. Projects are stored locally, and PDF import, text extraction, page rendering, text editing, and per-page text-to-speech work end to end. Export is not implemented yet, and there is no OCR: text comes from the PDF's own text layer, so a scanned PDF imports with empty pages. See [Roadmap](#roadmap).
+> **Status:** early development. Projects are stored locally, and PDF import, text extraction, page rendering, text editing, per-page text-to-speech, and audiobook export work end to end. There is no OCR yet: text comes from the PDF's own text layer, so a scanned PDF imports with empty pages. See [Roadmap](#roadmap).
 
 ## Features
 
@@ -94,6 +94,6 @@ Every item below is built to run on-device, in keeping with the fully-offline go
 - [ ] OCR for scanned pages
 - [x] Text-to-speech, page by page (on-device)
 - [x] Voice model download, resumable and verified, or install from a folder
-- [ ] Audiobook export
+- [x] Audiobook export
 - [ ] Release packaging (sidecar built by the release build; Windows and macOS)
 - [x] Persistent project storage
