@@ -206,3 +206,80 @@ export const acquireModel = (language: string, sourceDir?: string) =>
  */
 export const cancelModelAcquisition = (language: string) =>
   invoke<void>("cancel_model_acquisition_cmd", { language });
+
+/** What the Export dialog shows before anything starts. */
+export interface ExportPlan {
+  total: number;
+  ready: number;
+  toSynthesize: number;
+  /** Of `toSynthesize`, pages whose take is in another voice or speed and will be replaced. */
+  replacing: number;
+  empty: number[];
+}
+
+export type ExportPhase = "synthesizing" | "sweeping" | "stitching";
+
+export interface PageFailure {
+  pageNo: number;
+  /** The engine's own words; untranslated. */
+  message: string;
+}
+
+export type ExportOutcome =
+  | { kind: "done"; path: string; durationMs: number; empty: number[] }
+  | { kind: "failed"; pages: PageFailure[]; empty: number[] }
+  | { kind: "cancelled"; kept: number }
+  | { kind: "error"; message: string };
+
+export type ExportStatus =
+  | {
+      state: "running";
+      projectId: string;
+      title: string;
+      phase: ExportPhase;
+      /** Pages finished in the current pass, out of `total`. */
+      done: number;
+      total: number;
+      pageNo: number | null;
+      /** The current page's progress, or the stitch's, 0-1. */
+      pageProgress: number;
+      /** Pages synthesized so far in this run, across passes. */
+      synthesized: number;
+      startedAtMs: number;
+    }
+  | { state: "finished"; projectId: string; title: string; outcome: ExportOutcome };
+
+export type RunningExport = Extract<ExportStatus, { state: "running" }>;
+
+export const exportPlan = (
+  projectId: string,
+  voice: string,
+  rate: number,
+  firstPage: number,
+  lastPage: number,
+) => invoke<ExportPlan>("export_plan_cmd", { projectId, voice, rate, firstPage, lastPage });
+
+/**
+ * Start an export and return at once; it runs in the background for as long
+ * as it takes. Progress arrives on `export://progress`, each finished page on
+ * `export://page-done`, and the end on `export://finished`. Rejects straight
+ * away when the slot is busy, the range is wrong, or `outPath` cannot be written.
+ */
+export const startExport = (
+  projectId: string,
+  voice: string,
+  rate: number,
+  firstPage: number,
+  lastPage: number,
+  outPath: string,
+) =>
+  invoke<void>("start_export_cmd", { projectId, voice, rate, firstPage, lastPage, outPath });
+
+/** *Request* a stop. The run ends with a `cancelled` outcome once the current step notices. */
+export const cancelExport = () => invoke<void>("cancel_export_cmd");
+
+/** The current export, or its unseen result, or null. */
+export const exportStatus = () => invoke<ExportStatus | null>("export_status_cmd");
+
+/** Forget a finished run's result. A no-op while one is running. */
+export const dismissExport = () => invoke<void>("dismiss_export_cmd");

@@ -21,6 +21,14 @@ export function requestZoom(kind: ZoomCommand) {
   window.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: kind }));
 }
 
+/**
+ * Jump the open editor to a page. Export's summary links failed pages to the
+ * editor; when that project is already on screen, navigating would not move
+ * it, so the editor listens for this instead.
+ */
+export const GOTO_PAGE_EVENT = "enisma:goto-page";
+export type GotoPageDetail = { projectId: string; pageNo: number };
+
 export type AppCommands = {
   /** Leave the editor for the library. */
   back?: () => void;
