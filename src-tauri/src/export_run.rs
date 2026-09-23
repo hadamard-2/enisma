@@ -221,6 +221,7 @@ async fn run(
                     &data.0,
                     &sidecar_state,
                     claim,
+                    Some(&app.state::<ExportState>().cancel),
                     &req.project_id,
                     page_no,
                     &req.voice,
@@ -270,8 +271,11 @@ async fn run(
             return Ok(Outcome::Cancelled { kept: rep.synthesized });
         }
         rep.running(Phase::Stitching, 0, 1, None, 0.0);
+        // The last page's job is finished; a cancel must not aim at it.
+        claim.set_job_id("");
         let output = TempOutput::new(&req.out_path);
-        let duration_ms = match stitch(&sidecar_state, claim, &wavs, &req.title, output.path(), |p| {
+        let cancel = &app.state::<ExportState>().cancel;
+        let duration_ms = match stitch(&sidecar_state, claim, cancel, &wavs, &req.title, output.path(), |p| {
             rep.running(Phase::Stitching, 0, 1, None, p)
         })
         .await
@@ -301,6 +305,7 @@ async fn run(
 async fn stitch(
     sidecar_state: &SidecarState,
     claim: &ConversionClaim,
+    cancel: &AtomicBool,
     wavs: &[PathBuf],
     title: &str,
     out: &Path,
@@ -324,6 +329,7 @@ async fn stitch(
         .ok_or_else(|| JobFailure::Lost("sidecar did not return a job id".into()))?
         .to_string();
     claim.set_job_id(&job_id);
+    convert::cancel_if_requested(sidecar_state, Some(cancel), &job_id).await;
     let (_sample_rate, duration_ms) = convert::poll_job(sidecar_state, &job_id, on_progress).await?;
     Ok(duration_ms)
 }
@@ -371,6 +377,9 @@ pub fn start_export_cmd(
     // is ours the project either is already gone (and `get_project` fails
     // here, dropping the claim) or cannot go while the export runs.
     let claim = convert::claim_export(&active.0, &project_id)?;
+    // Reset while the claim is fresh: a cancel pressed from here on, even
+    // before the run starts, must stick.
+    export_state.cancel.store(false, Ordering::SeqCst);
     let title = {
         let conn = db.0.lock().unwrap();
         let detail = crate::project::get_project(&conn, &project_id).map_err(|e| e.to_string())?;
@@ -387,7 +396,6 @@ pub fn start_export_cmd(
         .map_err(|e| e.to_string())?;
     }
 
-    export_state.cancel.store(false, Ordering::SeqCst);
     let req = ExportRequest {
         project_id: project_id.clone(),
         title: title.clone(),

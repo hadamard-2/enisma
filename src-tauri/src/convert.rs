@@ -1,6 +1,7 @@
 //! Driving a page conversion: effective text, the job, and the stored take.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -98,9 +99,13 @@ impl ConversionClaim {
     }
 
     /// Record which page an export has moved on to.
+    ///
+    /// The previous page's job id goes with it: until the next job is issued a
+    /// cancel must find nothing to name, not a job that has already finished.
     pub fn set_page(&self, page_no: i64) {
         if let Some(job) = self.0.lock().unwrap().as_mut() {
             job.page_no = page_no;
+            job.job_id.clear();
         }
     }
 }
@@ -335,6 +340,22 @@ pub async fn poll_job(
     }
 }
 
+/// Stop a just-issued job if a cancel arrived while it was being started.
+///
+/// A cancel that lands before the job id is on the claim finds nothing to
+/// delete, so the run checks its flag once the id is recorded. Either the
+/// cancel saw the id, or this sees the flag; deleting twice is harmless.
+pub async fn cancel_if_requested(
+    sidecar_state: &SidecarState,
+    cancel: Option<&AtomicBool>,
+    job_id: &str,
+) {
+    if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        // A failed delete leaves the job to finish; poll_job still reports it.
+        let _ = sidecar::delete_json(sidecar_state, &format!("/jobs/{job_id}")).await;
+    }
+}
+
 /// Synthesize one page into its own slot and record what it was made from.
 ///
 /// The one path both Convert and export take, so the two cannot drift apart.
@@ -345,6 +366,7 @@ pub async fn synthesize_page(
     data_dir: &Path,
     sidecar_state: &SidecarState,
     claim: &ConversionClaim,
+    cancel: Option<&AtomicBool>,
     project_id: &str,
     page_no: i64,
     voice: &str,
@@ -386,6 +408,7 @@ pub async fn synthesize_page(
 
     // Named before polling, so a cancel issued during synthesis can find it.
     claim.set_job_id(&job_id);
+    cancel_if_requested(sidecar_state, cancel, &job_id).await;
 
     let (sample_rate, duration_ms) = poll_job(sidecar_state, &job_id, on_progress).await?;
 
@@ -432,6 +455,7 @@ pub async fn convert_page_cmd(
         &data.0,
         &sidecar_state,
         &claim,
+        None,
         &project_id,
         page_no,
         &voice,
@@ -772,6 +796,16 @@ mod tests {
         export.set_job_id("job-exp");
         assert!(job_for(&slot.lock().unwrap(), "p1", 3).is_none());
         assert_eq!(export_job(&slot.lock().unwrap()).as_deref(), Some("job-exp"));
+    }
+
+    #[test]
+    fn moving_an_export_to_the_next_page_forgets_the_last_job() {
+        let slot = Arc::new(Mutex::new(None));
+        let export = claim_export(&slot, "p1").unwrap();
+        export.set_page(3);
+        export.set_job_id("job-page-3");
+        export.set_page(4);
+        assert!(export_job(&slot.lock().unwrap()).is_none());
     }
 
     #[test]
