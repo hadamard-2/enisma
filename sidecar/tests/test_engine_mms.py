@@ -117,3 +117,26 @@ def test_what_reaches_sherpa_is_latin_only_with_periods_kept(monkeypatch, tmp_pa
     assert set(sent) <= set(
         "abcdefghijklmnopqrstuwxyzABCDEFGHIJKLMNOPQRSTUWXYZ' .!?"
     ), sent
+
+
+def test_a_page_with_no_sentence_marks_still_reports_progress_and_can_stop(
+    monkeypatch, tmp_path
+):
+    # Without the length cap this page is one utterance: a single callback at
+    # the very end, so Stop could only land once the work was already done.
+    fake = FakeTts()
+    engine = _engine(monkeypatch, fake)
+    page = " ".join(["salaame negere"] * 200)
+    seen = []
+    engine.synthesize(
+        page, "", 1.0, str(tmp_path / "p.wav"),
+        lambda f: seen.append(f) or True,
+    )
+    assert len(seen) > 1
+
+    calls = []
+    engine.synthesize(
+        page, "", 1.0, str(tmp_path / "q.wav"),
+        lambda f: calls.append(f) and False,
+    )
+    assert len(calls) == 1 and calls[0] < 1.0
