@@ -37,6 +37,9 @@ dependencies = [
     # docs/implementation-plan.md. Building from git needs a Rust toolchain
     # and takes about two minutes on a warm cargo cache.
     "num2words2",
+    # MP3 encoding for export. LGPL-3.0; the wheels bundle LAME and cover
+    # every target platform, so nothing is compiled here.
+    "lameenc>=1.8.4",
 ]
 
 [tool.uv.sources]
