@@ -598,7 +598,11 @@
     "again": { "message": "Export again", "context": "Button in the failed-pages summary that reopens the Export dialog with the same settings." },
     "pillRunning": { "message": "Exporting · {percent}%", "context": "Small title-bar indicator while an export runs. Click opens the progress view." },
     "pillReady": { "message": "Export ready", "context": "Title-bar indicator after an export finished. Click opens the summary." },
-    "pillAttention": { "message": "Export needs attention", "context": "Title-bar indicator after an export failed or some pages could not be read. Click opens the summary." }
+    "pillAttention": { "message": "Export needs attention", "context": "Title-bar indicator after an export failed or some pages could not be read. Click opens the summary." },
+    "quitTitle": { "message": "An export is running", "context": "Title of the confirmation shown when the user closes the window during an export." },
+    "quitBody": { "message": "Quit anyway? Finished pages are kept, and exporting again continues from there.", "context": "Body of the close-window confirmation during an export." },
+    "keepExporting": { "message": "Keep exporting", "context": "Button that dismisses the close-window confirmation and keeps the app open." },
+    "quitAnyway": { "message": "Quit", "context": "Button that stops the export and closes the app." }
   },
   "modelPanel": {
     "heading": {

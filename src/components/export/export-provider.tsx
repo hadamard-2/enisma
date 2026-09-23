@@ -14,6 +14,7 @@ import { dismissExport, exportStatus, setLastPage, type ExportStatus } from "@/l
 import { GOTO_PAGE_EVENT, type GotoPageDetail } from "@/lib/app-commands";
 import { ExportDialog } from "./export-dialog";
 import { ExportView } from "./export-view";
+import { QuitGuard } from "./quit-guard";
 
 type Ctx = {
   status: ExportStatus | null;
@@ -144,6 +145,7 @@ export function ExportProvider({ children }: { children: React.ReactNode }) {
           onGoToPage={goToPage}
         />
       )}
+      <QuitGuard running={running} />
     </ExportContext.Provider>
   );
 }
