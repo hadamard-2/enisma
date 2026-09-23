@@ -1,6 +1,13 @@
+import re
+
 import pytest
 
-from prepare import expand_numbers, prepare_geez
+from prepare import (
+    MMS_UTTERANCE_LIMIT,
+    cap_utterances,
+    expand_numbers,
+    prepare_geez,
+)
 
 # Stand-in for uroman: enough to exercise the numeral path without its tables.
 GEEZ_DIGITS = {"፩": "1", "፫": "3", "፵": "40", "፯": "7", "፲": "10", "፻": "100"}
@@ -133,3 +140,65 @@ def test_prepare_turns_line_breaks_into_utterance_boundaries():
     # being linear. Each line becomes its own utterance.
     out = prepare_geez("ሓደ ነገር\nካልእ ነገር\n\nሳልሳይ ነገር።", "ti", fake_romanize)
     assert out.count(".") == 3
+
+
+def _runs(text: str) -> list[str]:
+    return [r.strip() for r in re.split(r"[.!?]", text) if r.strip()]
+
+
+def _words(text: str) -> list[str]:
+    return re.sub(r"[.!?]", " ", text).split()
+
+
+def test_an_unmarked_run_is_capped_into_balanced_pieces_at_word_boundaries():
+    # A page whose ። marks were lost is one unbroken utterance: one progress
+    # callback, cancellation only at the end, and past ~2,000 romanized
+    # characters a cost that stops being linear. The cap bounds every utterance
+    # whether or not the page has its punctuation.
+    run = " ".join(["salaame"] * 150)  # 1,199 characters, no sentence mark
+    out = cap_utterances(run)
+    pieces = _runs(out)
+    assert len(pieces) == 3
+    assert all(len(p) <= MMS_UTTERANCE_LIMIT for p in pieces)
+    # Balanced, not greedy: no short tail stranded after two full pieces.
+    assert min(len(p) for p in pieces) > MMS_UTTERANCE_LIMIT // 2
+    assert _words(out) == _words(run)
+
+
+def test_runs_within_the_cap_come_through_untouched():
+    text = "hade neger. " * 40 + ("kalie " * 83).strip() + "? salaame!"
+    assert len(("kalie " * 83).strip()) <= MMS_UTTERANCE_LIMIT
+    assert cap_utterances(text) == text
+
+
+def test_a_run_exactly_at_the_cap_is_not_split():
+    run = "a" * (MMS_UTTERANCE_LIMIT - 2) + " b"
+    assert cap_utterances(run) == run
+
+
+def test_only_the_overlong_run_is_split_and_its_neighbours_are_kept():
+    long_run = " ".join(["katamaayetu"] * 80)
+    text = f"hade neger. {long_run}? kalie neger!"
+    out = cap_utterances(text)
+    assert out.startswith("hade neger. ")
+    assert out.endswith("? kalie neger!")
+    assert all(len(p) <= MMS_UTTERANCE_LIMIT for p in _runs(out))
+    assert _words(out) == _words(text)
+
+
+def test_a_run_with_no_spaces_is_hard_cut_rather_than_left_unbounded():
+    # OCR junk can produce a run with nowhere to break. A bad seam is better
+    # than unbounded work, and no letter may be lost.
+    run = "a" * (MMS_UTTERANCE_LIMIT * 2 + 7)
+    pieces = _runs(cap_utterances(run))
+    assert all(len(p) <= MMS_UTTERANCE_LIMIT for p in pieces)
+    assert "".join(pieces) == run
+
+
+def test_prepare_caps_a_page_whose_sentence_marks_were_lost():
+    # Already Latin, because fake_romanize transliterates marks, not letters.
+    page = " ".join(["salaame negere"] * 200)  # no ። anywhere, one line
+    out = prepare_geez(page, "am", fake_romanize)
+    pieces = _runs(out)
+    assert len(pieces) > 1
+    assert all(len(p) <= MMS_UTTERANCE_LIMIT for p in pieces)

@@ -118,6 +118,67 @@ def prepare_english(text: str) -> str:
     return _DOTTED_NUMBER.sub(" point ", end_lines(text))
 
 
+# The longest utterance, in romanized characters, that an MMS page is allowed
+# to hand sherpa-onnx in one piece. The sentence marks normally bound utterance
+# size, but a page whose ። were lost to OCR or the text layer has none, and one
+# unbroken run is costly in three ways: sherpa-onnx reports progress once per
+# utterance, Stop can only land between utterances, and past ~2,000 characters
+# generation stops scaling linearly (see the §3 table in
+# docs/implementation-plan.md). Measured on the am model, a 4,404-character
+# unpunctuated page split into nine ~490-character pieces at 8-12 s each, so
+# Stop lands within about that; and 500 is long enough that only an unusually
+# long real sentence gets split. A forced split sounds like a
+# sentence end -- measured, a ~175 ms pause -- which is the price of the bound.
+MMS_UTTERANCE_LIMIT = 500
+
+_RUN = re.compile(r"[^.!?]+")
+
+
+def _split_run(run: str, limit: int) -> list[str]:
+    """Cut one run into balanced pieces of at most `limit`, at spaces.
+
+    Balanced rather than greedy, so a run just over the limit becomes two
+    halves instead of a full piece and a stranded word or two. A stretch with
+    no space to break at is cut at the limit itself: a bad seam, but the work
+    stays bounded and no letter is lost.
+    """
+    pieces = []
+    while len(run) > limit:
+        remaining = -(-len(run) // limit)
+        ideal = -(-len(run) // remaining)
+        before = run.rfind(" ", 0, ideal + 1)
+        after = run.find(" ", ideal, limit + 1)
+        if before <= 0 and after < 0:
+            cut = limit
+        elif before <= 0 or (after >= 0 and after - ideal < ideal - before):
+            cut = after
+        else:
+            cut = before
+        pieces.append(run[:cut].strip())
+        run = run[cut:].strip()
+    pieces.append(run)
+    return pieces
+
+
+def cap_utterances(text: str, limit: int = MMS_UTTERANCE_LIMIT) -> str:
+    """Put a period into any run between sentence marks longer than `limit`.
+
+    Runs within the limit come back exactly as they were, so a page with its
+    punctuation intact is untouched.
+    """
+
+    def cap(match: re.Match[str]) -> str:
+        run = match.group()
+        body = run.strip()
+        if len(body) <= limit:
+            return run
+        lead = run[: len(run) - len(run.lstrip())]
+        trail = run[len(run.rstrip()) :]
+        return lead + ". ".join(_split_run(body, limit)) + trail
+
+    return _RUN.sub(cap, text)
+
+
 def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
     """Full pipeline for the three MMS languages."""
     expanded = expand_numbers(end_lines(text), language, romanize)
@@ -127,7 +188,8 @@ def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
     # stripped below.
     romanized = romanize(expanded, LCODE[language]).translate(_V_FOLD)
     stripped = _UNSPEAKABLE.sub(" ", romanized)
-    return _WHITESPACE.sub(" ", stripped).strip()
+    # Capped last, so the limit is measured on exactly what the model reads.
+    return cap_utterances(_WHITESPACE.sub(" ", stripped).strip())
 
 
 # Kokoro's context is 512, and its style vector has exactly 510 ROWS, indexed by
