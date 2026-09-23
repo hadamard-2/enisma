@@ -1,6 +1,7 @@
 mod audio;
 mod convert;
 mod db;
+mod export;
 mod import;
 mod models;
 mod pdf;
