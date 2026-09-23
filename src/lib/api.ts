@@ -31,6 +31,13 @@ export interface ProjectDetail {
   pages: PageMeta[];
   /** Pages never extracted (`source_text IS NULL`). Non-zero triggers repair. */
   pagesMissingText: number;
+  /** The last export's settings, offered again by the Export dialog; null if never exported. */
+  exportVoice: string | null;
+  exportRate: number | null;
+  exportFirstPage: number | null;
+  exportLastPage: number | null;
+  /** Absolute path the last export was saved to. */
+  exportPath: string | null;
 }
 
 export interface PageText {

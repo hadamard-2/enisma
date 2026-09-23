@@ -54,6 +54,18 @@ const V3_MIGRATION: &str = r#"
 ALTER TABLE projects ADD COLUMN last_page INTEGER;
 "#;
 
+/// v4 remembers the last export's settings, so reopening the Export dialog
+/// offers them again. That is the whole of resuming: finished takes live in
+/// the page rows, and exporting again with the same settings reuses them.
+/// NULL means the project has never been exported.
+const V4_MIGRATION: &str = r#"
+ALTER TABLE projects ADD COLUMN export_voice      TEXT;
+ALTER TABLE projects ADD COLUMN export_rate       REAL;
+ALTER TABLE projects ADD COLUMN export_first_page INTEGER;
+ALTER TABLE projects ADD COLUMN export_last_page  INTEGER;
+ALTER TABLE projects ADD COLUMN export_path       TEXT;
+"#;
+
 /// Apply pending migrations. Versioned with `PRAGMA user_version` so later
 /// milestones can add steps without rewriting this.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
@@ -69,6 +81,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if version < 3 {
         conn.execute_batch(V3_MIGRATION)?;
         conn.pragma_update(None, "user_version", 3)?;
+    }
+    if version < 4 {
+        conn.execute_batch(V4_MIGRATION)?;
+        conn.pragma_update(None, "user_version", 4)?;
     }
     Ok(())
 }
@@ -108,12 +124,12 @@ mod tests {
     }
 
     #[test]
-    fn migrate_brings_a_fresh_database_to_version_3() {
+    fn migrate_brings_a_fresh_database_to_version_4() {
         let conn = open_in_memory().unwrap();
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     #[test]
@@ -176,6 +192,31 @@ mod tests {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
+    }
+
+    #[test]
+    fn migrate_adds_the_export_columns_to_an_existing_v3_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(super::V1_SCHEMA).unwrap();
+        conn.execute_batch(super::V2_MIGRATION).unwrap();
+        conn.execute_batch(super::V3_MIGRATION).unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, title, language, pdf_path, page_count, created_at, updated_at)
+             VALUES ('p', 't', 'en', 'x.pdf', 3, '', '')",
+            [],
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        // An existing project has never been exported.
+        let (voice, path): (Option<String>, Option<String>) = conn
+            .query_row("SELECT export_voice, export_path FROM projects WHERE id = 'p'", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((voice, path), (None, None));
     }
 }
