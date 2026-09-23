@@ -1,7 +1,7 @@
 //! Driving a page conversion: effective text, the job, and the stored take.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rusqlite::Connection;
@@ -18,25 +18,38 @@ use crate::{DataDir, Db};
 /// Cancel, not about precision.
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
+/// What holds the conversion slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Holder {
+    /// One page, converted from the panel.
+    Page,
+    /// An export, for its whole run; `page_no` follows the page it is on.
+    Export,
+}
+
 #[derive(Debug, Clone)]
 pub struct ActiveJob {
+    pub holder: Holder,
     pub project_id: String,
     pub page_no: i64,
     pub job_id: String,
 }
 
-/// The one conversion that may be running. Conversion is one page at a time by
-/// design, so a single slot is the whole bookkeeping.
+/// The one conversion that may be running. One at a time by design, so a
+/// single slot is the whole bookkeeping. `Arc` so an export's background task
+/// can own its claim for the hours it runs.
 #[derive(Default)]
-pub struct ActiveConversion(pub Mutex<Option<ActiveJob>>);
+pub struct ActiveConversion(pub Arc<Mutex<Option<ActiveJob>>>);
 
 /// The job id to cancel for a given page, if that page is the one running.
 ///
 /// The page check is load-bearing: a Cancel aimed at a page the user has since
 /// navigated away from must not stop the conversion that is actually running.
+/// Nor may a page's Cancel stop an export that happens to be on that page.
 pub fn job_for(active: &Option<ActiveJob>, project_id: &str, page_no: i64) -> Option<String> {
     active
         .as_ref()
+        .filter(|j| j.holder == Holder::Page)
         .filter(|j| j.project_id == project_id && j.page_no == page_no)
         // The slot is claimed before the sidecar has issued a job id, so a
         // cancel landing in that gap has nothing to name yet.
@@ -44,9 +57,31 @@ pub fn job_for(active: &Option<ActiveJob>, project_id: &str, page_no: i64) -> Op
         .map(|j| j.job_id.clone())
 }
 
+/// The sidecar job an export is waiting on right now, if one is.
+// The export task (Task 6) is the first non-test caller.
+#[allow(dead_code)]
+pub fn export_job(active: &Option<ActiveJob>) -> Option<String> {
+    active
+        .as_ref()
+        .filter(|j| j.holder == Holder::Export && !j.job_id.is_empty())
+        .map(|j| j.job_id.clone())
+}
+
+/// The project being exported, if any.
+pub fn exporting_project(active: &Option<ActiveJob>) -> Option<String> {
+    active
+        .as_ref()
+        .filter(|j| j.holder == Holder::Export)
+        .map(|j| j.project_id.clone())
+}
+
 /// What the user is told when a conversion is already running.
 pub const BUSY_MESSAGE: &str =
     "another page is already being converted. Wait for it to finish, or cancel it first.";
+
+/// What the user is told when an export holds the slot.
+pub const EXPORT_BUSY_MESSAGE: &str =
+    "an export is running. Wait for it to finish, or cancel it first.";
 
 /// Exclusive hold on the single conversion slot, released on every exit path.
 ///
@@ -54,45 +89,83 @@ pub const BUSY_MESSAGE: &str =
 /// `?` on a failed job must not leave the slot occupied, or the app would
 /// refuse every later conversion until it is restarted.
 #[derive(Debug)]
-pub struct ConversionClaim<'a>(&'a Mutex<Option<ActiveJob>>);
+pub struct ConversionClaim(Arc<Mutex<Option<ActiveJob>>>);
 
-impl ConversionClaim<'_> {
+impl ConversionClaim {
     /// Record the job id the sidecar issued, so a cancel can name it.
     pub fn set_job_id(&self, job_id: &str) {
         if let Some(job) = self.0.lock().unwrap().as_mut() {
             job.job_id = job_id.to_string();
         }
     }
+
+    /// Record which page an export has moved on to.
+    // The export task (Task 6) is the first non-test caller.
+    #[allow(dead_code)]
+    pub fn set_page(&self, page_no: i64) {
+        if let Some(job) = self.0.lock().unwrap().as_mut() {
+            job.page_no = page_no;
+        }
+    }
 }
 
-impl Drop for ConversionClaim<'_> {
+impl Drop for ConversionClaim {
     fn drop(&mut self) {
         *self.0.lock().unwrap() = None;
     }
 }
 
-/// Take the conversion slot for this page, or refuse.
+/// Take the slot for `job`, or refuse with a message naming what holds it.
 ///
 /// The check and the claim share one lock acquisition: testing the slot and
 /// then claiming it separately would reintroduce the very race this closes.
-/// Conversion is one page at a time by design, so a second start is an invalid
-/// state to refuse rather than a queue to build.
-pub fn claim<'a>(
-    slot: &'a Mutex<Option<ActiveJob>>,
+fn take(slot: &Arc<Mutex<Option<ActiveJob>>>, job: ActiveJob) -> Result<ConversionClaim, String> {
+    let mut guard = slot.lock().unwrap();
+    if let Some(current) = guard.as_ref() {
+        return Err(match current.holder {
+            Holder::Page => BUSY_MESSAGE,
+            Holder::Export => EXPORT_BUSY_MESSAGE,
+        }
+        .to_string());
+    }
+    *guard = Some(job);
+    drop(guard);
+    Ok(ConversionClaim(Arc::clone(slot)))
+}
+
+/// Take the conversion slot for one page, or refuse.
+pub fn claim(
+    slot: &Arc<Mutex<Option<ActiveJob>>>,
     project_id: &str,
     page_no: i64,
-) -> Result<ConversionClaim<'a>, String> {
-    let mut guard = slot.lock().unwrap();
-    if guard.is_some() {
-        return Err(BUSY_MESSAGE.to_string());
-    }
-    *guard = Some(ActiveJob {
-        project_id: project_id.to_string(),
-        page_no,
-        job_id: String::new(),
-    });
-    drop(guard);
-    Ok(ConversionClaim(slot))
+) -> Result<ConversionClaim, String> {
+    take(
+        slot,
+        ActiveJob {
+            holder: Holder::Page,
+            project_id: project_id.to_string(),
+            page_no,
+            job_id: String::new(),
+        },
+    )
+}
+
+/// Take the conversion slot for a whole export, or refuse.
+// The export task (Task 6) is the first non-test caller.
+#[allow(dead_code)]
+pub fn claim_export(
+    slot: &Arc<Mutex<Option<ActiveJob>>>,
+    project_id: &str,
+) -> Result<ConversionClaim, String> {
+    take(
+        slot,
+        ActiveJob {
+            holder: Holder::Export,
+            project_id: project_id.to_string(),
+            page_no: 0,
+            job_id: String::new(),
+        },
+    )
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -207,6 +280,142 @@ impl Drop for TempOutput {
     }
 }
 
+/// How a sidecar job can fail, split by what the caller should do about it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JobFailure {
+    /// Stopped on request.
+    Cancelled,
+    /// The job ran and failed on this input; the sidecar's own words. An export
+    /// records it against the page and carries on.
+    Failed(String),
+    /// The sidecar could not be reached, or no longer knows the job because it
+    /// restarted, or local storage failed. Nothing later will go better.
+    Lost(String),
+}
+
+impl JobFailure {
+    /// The single string Convert has always rejected with.
+    pub fn into_message(self) -> String {
+        match self {
+            JobFailure::Cancelled => "conversion cancelled".to_string(),
+            JobFailure::Failed(m) | JobFailure::Lost(m) => m,
+        }
+    }
+}
+
+/// Follow a sidecar job to its end, reporting progress on the way.
+///
+/// `state` is the only verdict. A cancelled job still carries a populated
+/// `sampleRate` and a non-zero `durationMs` over a truncated WAV, so deciding
+/// success by the presence of those fields would store a clipped take as if it
+/// were a finished one.
+pub async fn poll_job(
+    sidecar_state: &SidecarState,
+    job_id: &str,
+    mut on_progress: impl FnMut(f64),
+) -> Result<(i64, i64), JobFailure> {
+    loop {
+        tokio::time::sleep(POLL_INTERVAL).await;
+        let snapshot = sidecar::get_json(sidecar_state, &format!("/jobs/{job_id}"))
+            .await
+            .map_err(JobFailure::Lost)?;
+        match snapshot["state"].as_str() {
+            Some("running") => on_progress(snapshot["progress"].as_f64().unwrap_or(0.0)),
+            Some("done") => {
+                return Ok((
+                    snapshot["sampleRate"].as_i64().unwrap_or(0),
+                    snapshot["durationMs"].as_i64().unwrap_or(0),
+                ))
+            }
+            Some("cancelled") => return Err(JobFailure::Cancelled),
+            Some("error") => {
+                return Err(JobFailure::Failed(
+                    snapshot["message"]
+                        .as_str()
+                        .unwrap_or("synthesis failed")
+                        .to_string(),
+                ))
+            }
+            other => return Err(JobFailure::Lost(format!("unexpected job state {other:?}"))),
+        }
+    }
+}
+
+/// Synthesize one page into its own slot and record what it was made from.
+///
+/// The one path both Convert and export take, so the two cannot drift apart.
+/// The caller holds the claim; this only names the job on it.
+#[allow(clippy::too_many_arguments)]
+pub async fn synthesize_page(
+    db: &Db,
+    data_dir: &Path,
+    sidecar_state: &SidecarState,
+    claim: &ConversionClaim,
+    project_id: &str,
+    page_no: i64,
+    voice: &str,
+    rate: f64,
+    on_progress: impl FnMut(f64),
+) -> Result<(), JobFailure> {
+    let (text, language) = {
+        let conn = db.0.lock().unwrap();
+        let text = effective_text(&conn, project_id, page_no).map_err(JobFailure::Failed)?;
+        let detail = crate::project::get_project(&conn, project_id)
+            .map_err(|e| JobFailure::Lost(e.to_string()))?;
+        (text, detail.language)
+    };
+
+    let rel = audio_rel_path(project_id, page_no);
+    let out_path: PathBuf = data_dir.join(&rel);
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| JobFailure::Lost(e.to_string()))?;
+    }
+    let temp = TempOutput::new(&out_path);
+
+    let started = sidecar::post_json(
+        sidecar_state,
+        "/jobs/tts",
+        json!({
+            "text": text,
+            "language": language,
+            "voice": voice,
+            "rate": rate,
+            "out_path": temp.path().to_string_lossy(),
+        }),
+    )
+    .await
+    .map_err(JobFailure::Lost)?;
+    let job_id = started["jobId"]
+        .as_str()
+        .ok_or_else(|| JobFailure::Lost("sidecar did not return a job id".into()))?
+        .to_string();
+
+    // Named before polling, so a cancel issued during synthesis can find it.
+    claim.set_job_id(&job_id);
+
+    let (sample_rate, duration_ms) = poll_job(sidecar_state, &job_id, on_progress).await?;
+
+    // Only a finished job earns the final path; see `TempOutput`. The rename
+    // and the row write commit together, so the bytes at `out_path` and the
+    // row describing them can never disagree.
+    temp.commit(&out_path).map_err(JobFailure::Lost)?;
+
+    let conn = db.0.lock().unwrap();
+    audio::set_page_audio(
+        &conn,
+        project_id,
+        page_no,
+        &rel,
+        &audio::text_hash(&text),
+        &language,
+        voice,
+        rate,
+        sample_rate,
+        duration_ms,
+    )
+    .map_err(|e| JobFailure::Lost(e.to_string()))
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn convert_page_cmd(
@@ -221,111 +430,33 @@ pub async fn convert_page_cmd(
     rate: f64,
 ) -> Result<PageAudioDto, String> {
     // Claimed before any work, so a second conversion is refused rather than
-    // silently overwriting the slot and stranding the first job's Cancel.
-    let _claim = claim(&active.0, &project_id, page_no)?;
-
-    let (text, language) = {
-        let conn = db.0.lock().unwrap();
-        let text = effective_text(&conn, &project_id, page_no)?;
-        let detail = crate::project::get_project(&conn, &project_id).map_err(|e| e.to_string())?;
-        (text, detail.language)
-    };
-
-    let rel = audio_rel_path(&project_id, page_no);
-    let out_path: PathBuf = data.0.join(&rel);
-    if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    // Synthesis writes here; only a finished job earns `out_path`.
-    let temp = TempOutput::new(&out_path);
-
-    let started = sidecar::post_json(
+    // silently overwriting the slot and stranding the first job's Cancel. The
+    // claim releases the slot when this function returns, however it returns.
+    let claim = claim(&active.0, &project_id, page_no)?;
+    synthesize_page(
+        db.inner(),
+        &data.0,
         &sidecar_state,
-        "/jobs/tts",
-        json!({
-            "text": text,
-            "language": language,
-            "voice": voice,
-            "rate": rate,
-            "out_path": temp.path().to_string_lossy(),
-        }),
-    )
-    .await?;
-    let job_id = started["jobId"]
-        .as_str()
-        .ok_or("sidecar did not return a job id")?
-        .to_string();
-
-    _claim.set_job_id(&job_id);
-
-    // `_claim` releases the slot when this function returns, however it returns.
-    let (sample_rate, duration_ms) =
-        poll_job(&app, &sidecar_state, &job_id, &project_id, page_no).await?;
-
-    // The rename and the row write commit together, so the bytes at
-    // `out_path` and the row describing them can never disagree.
-    temp.commit(&out_path)?;
-
-    let conn = db.0.lock().unwrap();
-    audio::set_page_audio(
-        &conn,
+        &claim,
         &project_id,
         page_no,
-        &rel,
-        &audio::text_hash(&text),
-        &language,
         &voice,
         rate,
-        sample_rate,
-        duration_ms,
+        |progress| {
+            let _ = app.emit(
+                "tts://progress",
+                json!({ "projectId": project_id, "pageNo": page_no, "progress": progress }),
+            );
+        },
     )
-    .map_err(|e| e.to_string())?;
-    page_audio_dto(&conn, &project_id, page_no, &language, &voice, rate, &data.0)
-}
+    .await
+    .map_err(JobFailure::into_message)?;
 
-/// Watch one job to a terminal state, emitting progress as it goes.
-///
-/// `state` is the only verdict. A cancelled job still carries a populated
-/// `sampleRate` and a non-zero `durationMs` over a truncated WAV, so deciding
-/// success by the presence of those fields would store a clipped take as if it
-/// were a finished one.
-async fn poll_job(
-    app: &AppHandle,
-    sidecar_state: &SidecarState,
-    job_id: &str,
-    project_id: &str,
-    page_no: i64,
-) -> Result<(i64, i64), String> {
-    loop {
-        tokio::time::sleep(POLL_INTERVAL).await;
-        let snapshot = sidecar::get_json(sidecar_state, &format!("/jobs/{job_id}")).await?;
-        match snapshot["state"].as_str() {
-            Some("running") => {
-                let _ = app.emit(
-                    "tts://progress",
-                    json!({
-                        "projectId": project_id,
-                        "pageNo": page_no,
-                        "progress": snapshot["progress"].as_f64().unwrap_or(0.0),
-                    }),
-                );
-            }
-            Some("done") => {
-                return Ok((
-                    snapshot["sampleRate"].as_i64().unwrap_or(0),
-                    snapshot["durationMs"].as_i64().unwrap_or(0),
-                ))
-            }
-            Some("cancelled") => return Err("conversion cancelled".into()),
-            Some("error") => {
-                return Err(snapshot["message"]
-                    .as_str()
-                    .unwrap_or("synthesis failed")
-                    .to_string())
-            }
-            other => return Err(format!("unexpected job state {other:?}")),
-        }
-    }
+    let conn = db.0.lock().unwrap();
+    let language = crate::project::get_project(&conn, &project_id)
+        .map_err(|e| e.to_string())?
+        .language;
+    page_audio_dto(&conn, &project_id, page_no, &language, &voice, rate, &data.0)
 }
 
 /// Ask the sidecar to stop the conversion of this page.
@@ -400,6 +531,7 @@ mod tests {
     use super::*;
     use crate::db;
     use crate::project;
+    use std::sync::Arc;
 
     fn seed(conn: &mut rusqlite::Connection) -> String {
         project::create_project_with_id(
@@ -469,6 +601,7 @@ mod tests {
 
     fn active(project_id: &str, page_no: i64) -> Option<ActiveJob> {
         Some(ActiveJob {
+            holder: Holder::Page,
             project_id: project_id.to_string(),
             page_no,
             job_id: "job-abc".to_string(),
@@ -494,14 +627,14 @@ mod tests {
 
     #[test]
     fn a_cancel_before_the_sidecar_issues_a_job_id_matches_nothing() {
-        let slot = Mutex::new(None);
+        let slot = Arc::new(Mutex::new(None));
         let _claim = claim(&slot, "p1", 3).unwrap();
         assert!(job_for(&slot.lock().unwrap(), "p1", 3).is_none());
     }
 
     #[test]
     fn a_claim_names_the_job_once_the_sidecar_issues_an_id() {
-        let slot = Mutex::new(None);
+        let slot = Arc::new(Mutex::new(None));
         let claimed = claim(&slot, "p1", 3).unwrap();
         claimed.set_job_id("job-abc");
         assert_eq!(
@@ -512,7 +645,7 @@ mod tests {
 
     #[test]
     fn a_second_conversion_is_refused_while_one_is_running() {
-        let slot = Mutex::new(None);
+        let slot = Arc::new(Mutex::new(None));
         let _first = claim(&slot, "p1", 3).unwrap();
         // A different page is refused too: the slot holds one conversion, not
         // one per page.
@@ -522,7 +655,7 @@ mod tests {
 
     #[test]
     fn the_slot_is_released_when_a_conversion_ends() {
-        let slot = Mutex::new(None);
+        let slot = Arc::new(Mutex::new(None));
         {
             let _first = claim(&slot, "p1", 3).unwrap();
         }
@@ -603,15 +736,81 @@ mod tests {
 
     #[test]
     fn the_slot_is_released_even_when_the_conversion_fails() {
-        fn failing(slot: &Mutex<Option<ActiveJob>>) -> Result<(), String> {
+        fn failing(slot: &Arc<Mutex<Option<ActiveJob>>>) -> Result<(), String> {
             let _claim = claim(slot, "p1", 3)?;
             // Stands in for a job that errors mid-poll: an early `?` return.
             Err("synthesis failed".to_string())
         }
 
-        let slot = Mutex::new(None);
+        let slot = Arc::new(Mutex::new(None));
         assert_eq!(failing(&slot).unwrap_err(), "synthesis failed");
         assert!(slot.lock().unwrap().is_none());
         claim(&slot, "p1", 3).expect("slot free after a failure");
+    }
+
+    #[test]
+    fn an_export_refuses_a_page_conversion_with_the_export_message() {
+        let slot = Arc::new(Mutex::new(None));
+        let _export = claim_export(&slot, "p1").unwrap();
+        assert_eq!(claim(&slot, "p1", 3).unwrap_err(), EXPORT_BUSY_MESSAGE);
+        assert_eq!(claim(&slot, "p2", 1).unwrap_err(), EXPORT_BUSY_MESSAGE);
+    }
+
+    #[test]
+    fn a_page_conversion_refuses_an_export() {
+        let slot = Arc::new(Mutex::new(None));
+        let _page = claim(&slot, "p1", 3).unwrap();
+        assert_eq!(claim_export(&slot, "p1").unwrap_err(), BUSY_MESSAGE);
+    }
+
+    #[test]
+    fn a_second_export_is_refused() {
+        let slot = Arc::new(Mutex::new(None));
+        let _first = claim_export(&slot, "p1").unwrap();
+        assert_eq!(claim_export(&slot, "p2").unwrap_err(), EXPORT_BUSY_MESSAGE);
+    }
+
+    #[test]
+    fn a_page_cancel_never_stops_an_export() {
+        let slot = Arc::new(Mutex::new(None));
+        let export = claim_export(&slot, "p1").unwrap();
+        export.set_page(3);
+        export.set_job_id("job-exp");
+        assert!(job_for(&slot.lock().unwrap(), "p1", 3).is_none());
+        assert_eq!(export_job(&slot.lock().unwrap()).as_deref(), Some("job-exp"));
+    }
+
+    #[test]
+    fn export_job_ignores_a_page_conversion() {
+        let slot = Arc::new(Mutex::new(None));
+        let page = claim(&slot, "p1", 3).unwrap();
+        page.set_job_id("job-page");
+        assert!(export_job(&slot.lock().unwrap()).is_none());
+    }
+
+    #[test]
+    fn exporting_project_names_only_an_export() {
+        let slot = Arc::new(Mutex::new(None));
+        {
+            let _page = claim(&slot, "p1", 3).unwrap();
+            assert!(exporting_project(&slot.lock().unwrap()).is_none());
+        }
+        let _export = claim_export(&slot, "p2").unwrap();
+        assert_eq!(exporting_project(&slot.lock().unwrap()).as_deref(), Some("p2"));
+    }
+
+    #[test]
+    fn an_export_claim_is_released_when_dropped_on_another_thread() {
+        let slot = Arc::new(Mutex::new(None));
+        let export = claim_export(&slot, "p1").unwrap();
+        std::thread::spawn(move || drop(export)).join().unwrap();
+        claim(&slot, "p1", 1).expect("slot free after the export task ended");
+    }
+
+    #[test]
+    fn job_failures_read_as_the_messages_convert_always_returned() {
+        assert_eq!(JobFailure::Cancelled.into_message(), "conversion cancelled");
+        assert_eq!(JobFailure::Failed("bad numeral".into()).into_message(), "bad numeral");
+        assert_eq!(JobFailure::Lost("sidecar starting".into()).into_message(), "sidecar starting");
     }
 }

@@ -519,6 +519,22 @@ pub fn update_project_cmd(
     .map_err(|e| e.to_string())
 }
 
+/// What the user is told when they delete a project that is being exported.
+pub const EXPORTING_MESSAGE: &str =
+    "this project is being exported. Cancel the export first, or wait for it to finish.";
+
+/// Refuse to delete a project an export is running on. A page conversion does
+/// not block deletion, as it never did.
+///
+/// The export task writes takes into this project's folder for hours;
+/// deleting it underneath would leave the task writing into nothing.
+fn refuse_if_exporting(active: &Option<crate::convert::ActiveJob>, id: &str) -> Result<(), String> {
+    if crate::convert::exporting_project(active).as_deref() == Some(id) {
+        return Err(EXPORTING_MESSAGE.to_string());
+    }
+    Ok(())
+}
+
 /// Delete a project and the PDF copy made for it. Irreversible.
 ///
 /// `async` so a recursive directory removal does not block the IPC thread.
@@ -526,8 +542,10 @@ pub fn update_project_cmd(
 pub fn delete_project_cmd(
     db: State<'_, Db>,
     data: State<'_, DataDir>,
+    active: State<'_, crate::convert::ActiveConversion>,
     id: String,
 ) -> Result<(), String> {
+    refuse_if_exporting(&active.0.lock().unwrap(), &id)?;
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     delete_project(&mut conn, &data.0, &id)
 }
@@ -599,6 +617,23 @@ pub fn read_pdf_bytes_cmd(path: String) -> Result<tauri::ipc::Response, String> 
 mod tests {
     use super::*;
     use crate::db;
+
+    #[test]
+    fn deleting_a_project_is_refused_while_it_is_exported() {
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let _export = crate::convert::claim_export(&slot, "p1").unwrap();
+        assert_eq!(refuse_if_exporting(&slot.lock().unwrap(), "p1").unwrap_err(), EXPORTING_MESSAGE);
+        // Another project is not the one being exported.
+        assert!(refuse_if_exporting(&slot.lock().unwrap(), "p2").is_ok());
+    }
+
+    #[test]
+    fn deleting_a_project_is_allowed_during_a_page_conversion_or_when_idle() {
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        assert!(refuse_if_exporting(&slot.lock().unwrap(), "p1").is_ok());
+        let _page = crate::convert::claim(&slot, "p1", 3).unwrap();
+        assert!(refuse_if_exporting(&slot.lock().unwrap(), "p1").is_ok());
+    }
 
     fn temp_data_dir(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("enisma-test-{name}"));
