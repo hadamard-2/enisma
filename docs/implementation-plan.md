@@ -1,10 +1,10 @@
 # Enisma — Backend Implementation Plan
 
-> Internal name: **HearBook**. User-facing name: **Enisma**. This plan covers the unimplemented backend: the PDF → text-extraction → text-to-speech → export pipeline, plus persistence. The front-end is already built and currently runs on mock data (`src/lib/data.ts`, `src/lib/editor-data.ts`); each milestone below progressively replaces that mock data with real, on-device functionality.
+> Internal name: **HearBook**. User-facing name: **Enisma**. This plan covers the backend: the PDF → text-extraction → text-to-speech → export pipeline, plus persistence. When it was written the front-end ran on mock data; M1–M4 replaced that with real, on-device functionality, and what remains is export (M5) and download completion plus packaging (M6). Sections were revised on 2026-09-23 to describe what was actually built; each milestone's own design doc under `docs/superpowers/specs/` records how and why it diverged from the original plan.
 
 ## Goals & non-negotiables
 
-- **Fully offline, on-device.** Apart from a one-time model download on first launch, the entire pipeline (extraction, TTS, export) runs locally with no network. User textbooks never leave the machine. No cloud OCR or hosted TTS — ever.
+- **Fully offline, on-device.** Apart from a one-time download of each language's voice model, the entire pipeline (extraction, TTS, export) runs locally with no network. User textbooks never leave the machine. No cloud OCR or hosted TTS — ever.
 - **Languages:** English, Amharic, Tigrigna, Afaan Oromo.
 - **Replace, don't rebuild.** The UI, routing, keyboard model, and panel layout stay as-is. We swap mock data for real data behind the existing components.
 
@@ -13,67 +13,71 @@
 Three cooperating processes:
 
 ```
-React (Tauri webview)  ──invoke──▶  Rust / Tauri core  ──loopback HTTP──▶  Python sidecar (bundled, offline)
-  • existing UI                       • SQLite project store               • docling      → text extraction (text-layer-first; OCR fallback)
-  • pdf.js page rendering             • spawns + supervises sidecar        • kokoro-onnx  → English TTS (multi-voice)
-  • editor / settings / preview       • owns app-data files                • sherpa-onnx + uroman → MMS TTS (am / ti / om)
-                                      • typed command wrappers              • MP3 stitch/encode for export
+React (Tauri webview)  ──invoke──▶  Rust / Tauri core  ──loopback HTTP──▶  Python sidecar (frozen, offline)
+  • UI                                • SQLite project store               • Kokoro on onnxruntime + espeak-ng → English TTS (multi-voice)
+  • pdf.js rendering                  • spawns + supervises sidecar        • sherpa-onnx + uroman → MMS TTS (am / ti / om)
+  • pdf.js text extraction (import)   • owns app-data files                • model download / install + verification
+  • editor / settings / playback      • typed command wrappers             • (M5) MP3 stitch/encode for export
 ```
 
-**Why a Python sidecar:** docling is Python-only, and the proven MMS-TTS path (`../amharic-speech-models`) is `sherpa-onnx` + `uroman` in Python. Two of the three core engines mandate Python, so we unify all inference in one bundled Python process rather than maintaining multiple inference runtimes.
+**Why a Python sidecar:** the proven MMS-TTS path (`../amharic-speech-models`) is `sherpa-onnx` + `uroman` in Python, and uroman exists only as a Python package, so Python is mandatory for three of the four languages. English runs in the same process so there is one inference runtime and one packaging story. (docling was the other original reason; it left in M3, when extraction moved to pdf.js in the webview.)
 
 ### Locked decisions
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Kokoro (English TTS) runtime | **Python sidecar** via `kokoro-onnx` | One runtime, one packaging + model-download story, native ONNX Runtime speed. The provided `kokoro-js` snippet becomes its Python equivalent. |
-| Rust ↔ sidecar IPC | **Loopback HTTP** — FastAPI on `127.0.0.1:<ephemeral port>` with a startup handshake + bearer token | Mirrors the `amharic-speech-models` reference exactly; trivial streaming for extraction progress and audio. |
+| Kokoro (English TTS) runtime | **Python sidecar**, Kokoro's ONNX model driven directly on `onnxruntime`, with espeak-ng (via `phonemizer` + `espeakng-loader`) for G2P | One runtime, one packaging + model-download story. The M4 design named `kokoro-onnx`; the implementation drives the model directly from the files the `onnx-community` repo ships (`engine_kokoro.py`). misaki was rejected in the M4 spike; see §3. |
+| Rust ↔ sidecar IPC | **Loopback HTTP** — FastAPI on `127.0.0.1:<ephemeral port>` with a startup handshake + bearer token; long work as **polled jobs** | Mirrors the `amharic-speech-models` reference. Jobs rather than streaming responses because synthesis reports through a callback a generator cannot yield from, and because long work must outlive one request. |
 | Audiobook export format | **MP3** (single concatenated file) | Universally playable, modest bundle. (M4B-with-chapters was considered; deferred to keep the bundle lean.) |
-| PDF on-screen rendering | **pdf.js (`pdfjs-dist`)** in the webview | Interactive, offline, well-trodden. docling owns text; pdf.js owns pixels — clean split. *(My call, open to review.)* |
+| PDF rendering **and text extraction** | **pdf.js (`pdfjs-dist`)** in the webview | Rendering as originally planned. Extraction joined it in M3, replacing docling: already bundled, sub-second for a whole book, and no 1.4 GB torch dependency. |
 | Project storage | **Rust-owned SQLite (`rusqlite`)** + typed Tauri commands; binaries on disk | Transactional logic stays in Rust, not in frontend SQL. |
-| OCR scope (v0) | **No Ge'ez OCR.** Text-layer-first everywhere; EasyOCR fallback for Latin-script projects only (English/Oromo); Amharic/Tigrigna are text-layer-only | Textbooks almost always ship a text layer, so OCR is a rare fallback. Ge'ez OCR is high-effort / low-ROI and is deferred — this also removes Tesseract and its cross-platform bundling risk from v0 entirely. |
+| OCR scope (v0) | **No OCR in any language.** Text layer only, for all four languages | Originally Ge'ez-only; M3 extended it to English and Oromo when docling (and with it EasyOCR) was dropped. A page with no text layer is reported as such and stays empty. |
 | Pitch control | **Dropped** | Neither Kokoro nor MMS/VITS exposes pitch natively; we won't fake it. Rate maps to each engine's speed. The pitch slider is removed from the UI. |
-| Model delivery | **Download on first launch** from **our own hosted copies** (HuggingFace model repo or a GitHub release), via a manifest-driven download handler with checksums + resume | Matches the "install, then download models" framing; keeps the installer thin; hosting our own copies makes the offline-critical download reliable instead of dependent on shifting upstream URLs. |
+| Model delivery | **Download once per language, when a page first needs it**, via a manifest-driven handler with SHA-256 checks and resume, or **install from a folder** offline | Keeps the installer thin. Files are pinned by hash in `sidecar/models.json`; see §7 for where they are hosted and the one gap in how they are pinned. |
 
 ## Components
 
 ### 1. Python sidecar
 
-Lives in a new top-level dir (e.g. `sidecar/`), `uv`-managed, Python ≥ 3.12, frozen with PyInstaller and shipped as a Tauri `externalBin`.
+`sidecar/`, `uv`-managed, Python ≥ 3.12, frozen with PyInstaller into a onefile binary and shipped as a Tauri `externalBin`. [`sidecar/README.md`](../sidecar/README.md) is the authoritative reference for its environment, handshake, routes and frozen-build contents; this section is the overview.
 
 ```
 sidecar/
-  pyproject.toml        uv project (py>=3.12)
-  server.py             FastAPI app; lifespan lazily loads engines; reports port+ready on stdout
-  extract.py            docling wrapper (text-layer-first + OCR fallback)
-  tts_kokoro.py         kokoro-onnx engine (English, multi-voice)
-  tts_mms.py            sherpa-onnx VITS + uroman (adapted from the reference tts.py)
-  export.py             per-page audio concatenation → MP3
-  models.py             model paths, presence checks, first-run download (SSE progress)
+  pyproject.toml          uv project (py>=3.12)
+  server.py               FastAPI app; registers engines non-fatally; reports port+ready on stdout
+  jobs.py                 background-job registry the routes start, poll and cancel
+  tts.py                  engine registry and the synthesis contract
+  engine_kokoro.py        English: Kokoro on onnxruntime, espeak-ng G2P, chunking
+  engine_mms.py           am / ti / om: sherpa-onnx VITS
+  prepare.py              text preparation: numbers to words, uroman, per-model alphabet strip
+  guards.py               startup and pre-synthesis guards that turn silent failures into errors
+  models.py, models.json  manifest, download / folder install, SHA-256 verification
+  hearbook_sidecar.spec   PyInstaller spec
 ```
 
-**HTTP contract (all bound to `127.0.0.1`, bearer token required):**
+**HTTP contract (all bound to `127.0.0.1`, bearer token required).** Long work is a job: `POST` returns a `jobId` at once, `GET /jobs/{id}` reports progress, `DELETE /jobs/{id}` cancels.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /health` | Liveness + which engines/models are loaded. |
-| `GET /models/status` | Which model sets are present locally. |
-| `POST /models/download` | Fetch missing models; **SSE** progress stream. |
-| `POST /extract` | Body `{pdf_path, ocr_engine, langs, force_full_page_ocr}`. **SSE** stream of `{page_no, text, used_ocr}`. |
-| `GET /tts/voices?engine=kokoro` | Kokoro voice list (`get_voices()`). |
-| `POST /tts` | Body `{engine, lang, voice, text}` → audio bytes (page preview and export reuse this). |
+| `GET /health` | Liveness + which language engines actually registered. |
+| `POST /jobs/tts` | Synthesize one page's text to a WAV path Rust chooses. |
+| `GET /voices/{language}` | Kokoro voice names for `en`; empty for the single-speaker MMS languages. |
+| `GET /models/status` | Per language: present, total bytes, installed bytes, partial bytes to resume from. |
+| `POST /jobs/fetch` | Download one language's models (resumable). |
+| `POST /jobs/import` | Install one language's models from a local folder. |
+| `GET` / `DELETE /jobs/{id}` | Poll or cancel any of the above. |
 
-Rust spawns the sidecar at startup, reads the `port`/`ready` handshake from stdout, passes the model dir and bearer token via env/args, waits for `/health`, restarts on crash, and kills it on app exit. The frontend never talks to the sidecar directly — it calls typed Tauri commands that proxy to it (keeps the token/port internal, avoids CORS).
+There is no extraction route: extraction runs in the webview (§2). Export's route is M5 work.
 
-### 2. Text extraction (docling)
+Rust spawns the sidecar at startup, reads the `port`/`ready` handshake from stdout, passes the bearer token and `HEARBOOK_MODELS_DIR` via env, waits for `/health`, restarts on crash, and kills it on app exit. The frontend never talks to the sidecar directly — it calls typed Tauri commands that proxy to it (keeps the token/port internal, avoids CORS).
 
-- **Text-layer-first.** Most textbooks ship an embedded text layer, so OCR is the exception, not the rule. docling uses the text layer where present and only reaches for OCR on pages/regions that lack one.
-- **OCR scope in v0, by script:**
-  - **Latin (English, Afaan Oromo):** `do_ocr=True` with **EasyOCR** (docling's default engine) as the fallback for any page missing a text layer.
-  - **Ge'ez (Amharic, Tigrigna):** **no OCR** — `do_ocr=False`, text-layer only. EasyOCR has no Amharic model and Tesseract Ge'ez is unreliable, so Ge'ez OCR is deferred past v0 (high effort, low ROI). OCR enablement is therefore decided per project by its language.
-- **Picking the Latin OCR engine is a dev-time call, not a UI toggle.** We default to EasyOCR and, if it underperforms on real textbook pages during dogfooding, swap it (e.g. RapidOCR) — there is no user-facing OCR-engine switch.
-- **Offline:** prefetch with `docling-tools models download` (or `docling.utils.model_downloader.download_models()`); point `artifacts_path` / `DOCLING_ARTIFACTS_PATH` at the app-data model dir.
-- Per-page text streams back over SSE and is persisted as `pages.source_text`; user edits become `pages.edited_text`. This feeds the editor's existing text panel and the live word-count / duration estimate.
+### 2. Text extraction (pdf.js)
+
+> Revised 2026-09-23. The original plan used docling with an EasyOCR fallback for Latin scripts. M3 evaluated docling 2.126.0 and replaced it: it would have taken the sidecar to ~1.4 GB (torch is unavoidable in that version) and run at 3.27 s/page. See the [M3 design](superpowers/specs/2026-09-12-m3-extraction-design.md) and [the docling spike](superpowers/specs/2026-09-12-m3-extraction-docling-spike.md).
+
+- **Text layer only, all four languages.** No OCR anywhere in v0. A PDF with no text layer is warned about at import, and its pages say so in the editor rather than looking like they are still loading.
+- **pdf.js in the webview, at import.** Rust reads the picked PDF and hands its raw bytes to the webview; `src/lib/extract.ts` runs `getTextContent()` per page, and the pure `src/lib/extract-assemble.ts` groups items into lines, reflows paragraphs and removes running headers and footers across the book. The assembled text goes back to Rust, which copies the PDF and creates the project, its pages and their `source_text` in one transaction. The whole 171-page sample book extracts in under a second.
+- `pages.source_text` is NULL where extraction has not run and `''` where the page genuinely has no text; a project missing its text repairs itself from the stored PDF. User edits go to `pages.edited_text` and are never overwritten by extraction. `used_ocr` is written `0` and stays reserved.
 
 ### 3. Speech synthesis
 
@@ -81,14 +85,14 @@ Language → engine matrix:
 
 | Language | Engine | Voices | Notes |
 | --- | --- | --- | --- |
-| English | Kokoro (`kokoro-onnx`) | **Multiple** (`get_voices()`, default e.g. `af_heart`) | 24 kHz. The settings-panel voice dropdown is real here. Needs a G2P step — see below. |
+| English | Kokoro on `onnxruntime` | **Multiple** (the `voices/*.bin` files in the manifest, e.g. `af_heart`) | 24 kHz. The settings-panel voice dropdown is real here. Needs a G2P step — see below. |
 | Amharic | MMS-TTS (`sherpa-onnx` VITS) | Single-speaker | 16 kHz. **`uroman(amh)` romanization** before synthesis (Ge'ez → Latin; MMS vocab is Latin-only). |
 | Tigrigna | MMS-TTS | Single-speaker | 16 kHz. `uroman(tir)`. |
 | Afaan Oromo | MMS-TTS | Single-speaker | 16 kHz. `uroman(orm)` (Latin/Qubee → near-identity). |
 
-- **English phonemization (G2P) is its own step.** Kokoro synthesizes from *phonemes*, not text. `kokoro-onnx` (v1.0+) recommends **misaki** as the primary English G2P with **eSpeak-NG as misaki's fallback** for out-of-vocabulary words: run G2P in `tts_kokoro.py`, then call `kokoro.create(phonemes, voice, is_phonemes=True)`. So the English path must bundle misaki (+ its data) **and** eSpeak-NG (library + data) offline — not just the model/voices files. A lighter alternative is the built-in `Tokenizer().phonemize()` (eSpeak-NG only, no misaki) at some English-quality cost. (The MMS languages don't use this; they romanize via `uroman` instead.)
-- For the MMS languages the voice selector should be hidden/disabled (single-speaker), matching the product note.
-- The `tts_mms.py` engine is adapted directly from the reference `../amharic-speech-models/tts.py`: load VITS on CPU, romanize, strip characters outside the model vocab, return PCM. Generalize the hardcoded `amh` to a per-language model dir + `lcode`.
+- **English phonemization (G2P) is its own step.** Kokoro synthesizes from *phonemes*, not text. The plan originally chose misaki with an eSpeak-NG fallback; the M4 spike found misaki pulls spacy and torch, so `engine_kokoro.py` uses **espeak-ng only**, through `phonemizer` and `espeakng-loader` (whose wheel carries the library and its data). Phonemes are then chunked to Kokoro's token limit and synthesized chunk by chunk, which is also where cancellation is checked. The quality cost against misaki has never been measured. (The MMS languages don't use this; they romanize via `uroman` instead.)
+- For the MMS languages the voice selector is replaced by the language's single named voice.
+- `engine_mms.py` is adapted from the reference `../amharic-speech-models/tts.py`: load VITS on CPU, one model directory per language. Romanization, number expansion and the strip to each model's alphabet live in `prepare.py`.
 - **Rate** maps to each engine's speed parameter. **Pitch is dropped** — neither Kokoro nor MMS/VITS exposes it natively and we won't fake it; the pitch slider is removed from the settings panel.
 
 #### What the MMS engines can and cannot do — measured
@@ -132,7 +136,7 @@ Two smaller mismatches, both benign and both left alone: `'` is in our allowlist
 
 #### Known limitation — the MMS languages cannot speak symbols (deferred past v0)
 
-The MMS symbol tables are Latin-letter only, so `prepare.py` strips everything outside `[A-Za-z'\s.!?]` **after** romanization. Two different failures come out of that, and neither is visible to the user today. Measured on this branch through the real `prepare_geez`:
+The MMS symbol tables are Latin-letter only, so `prepare.py` strips everything outside `[A-Za-z'\s.!?]` **after** romanization. Two different failures come out of that, and neither is visible to the user today. Measured through the real `prepare_geez`:
 
 | page text | what the voice actually says |
 | --- | --- |
@@ -156,29 +160,35 @@ Two candidate fixes, both deliberately out of v0:
 
 ### 4. PDF import & render
 
-- **Import:** Tauri dialog plugin to pick a PDF → copy into the project's app-data dir → create the `projects` row → kick off extraction.
-- **Render:** `pdfjs-dist` in React renders pages for the existing "PDF preview" and "side-by-side" view modes. No server, fully offline.
+- **Import:** pick a PDF with the Tauri dialog plugin or drop it onto the library → `lopdf` counts its pages → the webview extracts its text (§2) and warns if it has no text layer → Rust copies it to `projects/<id>/source.pdf` and creates the project, pages and text in one transaction. Re-importing the same file creates an independent project.
+- **Render:** `pdfjs-dist` in React renders pages for the "PDF preview" and "side-by-side" view modes, through Tauri's asset protocol, with zoom and a selectable text layer. No server, fully offline.
 
 ### 5. Persistence (SQLite, Rust-owned)
+
+`src-tauri/src/db.rs` is authoritative; migrations are keyed on `PRAGMA user_version` (currently 3). A summary:
 
 ```sql
 projects(
   id TEXT PRIMARY KEY,
   title TEXT, language TEXT,            -- en | am | ti | om
   pdf_path TEXT, page_count INTEGER,
-  tts_engine TEXT, voice TEXT, rate REAL,
-  status TEXT,                          -- drives the Home library filters
+  tts_engine TEXT,
+  voice TEXT, rate REAL,                -- the settings panel's remembered position, not the book's voice (M4)
+  last_page INTEGER,                    -- v3: where the project reopens
   created_at TEXT, updated_at TEXT
-);
+);                                      -- no status column: status is derived from pages
 pages(
   id TEXT PRIMARY KEY,
-  project_id TEXT REFERENCES projects(id),
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
   page_no INTEGER,
-  source_text TEXT,                     -- docling output (text layer or OCR)
+  source_text TEXT,                     -- pdf.js extraction; NULL = not extracted, '' = no text
   edited_text TEXT,                     -- user corrections
-  used_ocr INTEGER,                     -- bool: was OCR needed for this page
+  used_ocr INTEGER,                     -- always 0 in v0; reserved for OCR
   done INTEGER,                         -- reviewed flag
-  audio_path TEXT,                      -- cached per-page synthesis
+  audio_path TEXT,                      -- the page's single current take
+  audio_text_hash TEXT, audio_voice TEXT, audio_rate REAL,         -- v2: what the take was made from,
+  audio_sample_rate INTEGER, audio_duration_ms INTEGER,            --     which decides freshness
+  audio_language TEXT, audio_created_at INTEGER,
   UNIQUE(project_id, page_no)
 );
 ```
@@ -186,78 +196,114 @@ pages(
 On-disk layout under the app data dir:
 
 ```
-Enisma/
+<app data dir>/
   enisma.db
   projects/<id>/source.pdf
-  projects/<id>/audio/page-0001.{wav cache}
-  projects/<id>/export/<title>.mp3
-  models/{docling, kokoro, mms-amh, mms-tir, mms-orm, tesseract}/
+  projects/<id>/audio/page-<n>.wav
+  projects/<id>/export/…                (M5; not yet decided)
+  models/{en, am, ti, om}/
 ```
 
-This replaces every in-memory React state source: Home reads `projects`; the editor reads/writes `pages`; settings persist to the `projects` row.
+Home reads `projects`; the editor reads and writes `pages`; the settings panel persists its voice and rate to the `projects` row.
 
 ### 6. Export (MP3)
 
-Reuse cached per-page audio (synthesize any missing pages first), concatenate, encode to a single MP3 with a progress stream. Because a book is single-language, all pages share one engine and one sample rate — no cross-rate mixing. Encoding happens in the sidecar (the audio already lives there) via a libmp3lame-based encoder; ffmpeg is the fallback if needed. Replaces the current `console.log` export stub in `src/components/editor/editor.tsx`.
+> Revised 2026-09-23 against what M4 actually built. The original text assumed per-page caching was still to do and that progress would stream over SSE; neither is true any more.
 
-### 7. First-run model download & management
+**Already in place from M4.** Every converted page is written to `projects/<id>/audio/page-<n>.wav`, and the page row records the text, voice and rate it was made from. That record — not the audio, since MMS is not deterministic — decides whether a take is still fresh. Synthesis runs as a polled, cancellable sidecar job (`POST /jobs/tts`, `GET`/`DELETE /jobs/{id}`), a transport that was chosen partly so a long export could outlive any single HTTP request. The only export UI today is a disabled **Export audiobook** item in the title-bar menu (`src/components/chrome/title-bar.tsx`); the `console.log` stub this section used to point at no longer exists.
 
-A thin installer; on first launch (or when `GET /models/status` reports gaps), fetch into `…/models/`:
+**Decided in the M4 design, binding here.** Voice and rate are not book settings. The right-hand panel is a scratchpad; export chooses its own voice, rate and **page range** per export, defaulting to the panel's remembered voice and rate so that existing takes are likely to match and be reused.
 
-- docling artifacts (layout, tableformer, etc.)
-- EasyOCR models for Latin scripts (English/Oromo fallback)
-- Kokoro: model (`kokoro-v1.0.onnx`) + voices binary (`voices-v1.0.bin` — one blob holding every voice's style vectors, not a file per voice)
-- English phonemizer for Kokoro: **misaki** English G2P data/dictionary **+ eSpeak-NG** library & data (misaki's out-of-vocabulary fallback)
-- 3 × MMS models (am / ti / om — `model.onnx` + `tokens.txt`)
-- `uroman` data (ships with the pip package)
+**What M5 has to build.** An export dialog (voice, rate, range); a pass that synthesizes every page in range whose take is missing or stale for the chosen voice and rate and reuses the rest; concatenation; MP3 encoding; progress and cancel across the whole run. Language is per project, so one export has one engine and one sample rate (Kokoro 24 kHz, MMS 16 kHz) — assert it rather than assume it.
 
-**Hosting.** We host our own copies at a stable home — a HuggingFace model repo (free, resumable, CDN-backed) or a GitHub release on the hear-book repo — described by a versioned manifest. docling/EasyOCR/Kokoro can still originate from HuggingFace upstream, but we mirror the MMS models (which currently exist only as local zips) and pin *every* file in the manifest, so the download never depends on a shifting upstream URL.
+**Scale.** The M4 spike extrapolated roughly **2 hours for English and 4.7 hours for Amharic** across the 171-page sample book. Making Kokoro chunks smaller made Stop quicker but did not change total time. An export is a multi-hour job, so cancelling, resuming and surviving an app restart are core requirements, not polish.
 
-**Download handler — requirements (the "very good" part):**
+**Open questions — not decided:**
 
-- **Manifest-driven** — a versioned `models.json` listing each file: URL, byte size, SHA-256, target path, and which feature/language needs it.
-- **Integrity** — SHA-256-verify every file after download and re-check on launch; partial or corrupt files are re-fetched, never used.
-- **Resumable** — HTTP range requests so an interrupted transfer continues instead of restarting (these are 100+ MB files).
-- **Atomic install** — download to a temp path, verify, then move into place; a model dir is never left half-populated.
-- **Progress** — per-file and overall bytes/percent streamed to the UI over SSE, with clear states (queued / downloading / verifying / done / failed).
-- **Resilience** — retry with exponential backoff on transient failures; offer a retry action on hard failure; survive an app restart mid-download.
-- **Gating** — project creation is blocked with a clear "preparing models" state until the set required for the chosen language is present (an English project needs Kokoro + docling + EasyOCR; an Amharic project needs MMS-amh + docling).
+1. **Where the page loop lives.** Rust could drive one `/jobs/tts` per page, so each finished page is persisted as it lands (a cancel or crash loses at most one page and a re-run picks up the rest through the existing freshness check). Alternatively, one sidecar export job would give a single progress stream, but the sidecar would then have to write the per-page records that Rust owns today.
+2. **Whether export takes replace the page's preview take.** M4 keeps one take per page. If export writes back, an export in a different voice overwrites what the user was previewing; if it doesn't, an interrupted export has nothing to resume from.
+3. **How export coexists with the editor.** The app refuses a second conversion while one is running, and M4 lets the user edit other pages during a conversion. A page edited mid-export is stale by the time it is stitched.
+4. **The MP3 encoder.** Nothing in the sidecar's dependencies encodes MP3 yet. Any candidate — a libmp3lame binding or ffmpeg — is unverified: check its licence, whether it ships wheels on every target platform, and its frozen size before choosing. Bitrate and channel count are also still open.
+5. **Pages with no text** — skip them silently, or list them in the export summary.
+
+The open risk about MMS pages with no sentence marks (see Risks) matters more here: an export meets every page in the book, not only the one the user is looking at.
+
+### 7. Model download, management & packaging
+
+> Revised 2026-09-23. M4 built most of the download handler this section originally specified, and M3's move to pdf.js removed most of the models it listed. What follows separates what exists from what M6 still owns.
+
+**What gets downloaded — TTS models only.** Since M3, extraction runs on pdf.js, so there are no docling artifacts or EasyOCR models. English phonemization is espeak-ng through `espeakng-loader`, which is compiled into the sidecar binary, so misaki is not used. uroman's tables are also in the binary. The manifest (`sidecar/models.json`) covers:
+
+- **en** — Kokoro fp32 `model.onnx` (326 MB) + `tokenizer.json` + one `voices/<name>.bin` per offered voice (seven, 522 KB each). This is not a single `voices-v1.0.bin`.
+- **am / ti / om** — MMS `model.onnx` + `tokens.txt`, 114 MB each.
+
+**Built in M4** (`sidecar/models.py`, `src-tauri/src/models.rs`):
+
+- A versioned manifest with the URL, size and SHA-256 of every file.
+- Each file downloads to `<file>.part`, is hashed, and is renamed into place only when the hash matches. A model directory is never half-populated.
+- A `.part` left behind by a cancel, a dropped connection or a rate limit is resumed with an HTTP `Range` request the next time the download is asked for.
+- Download runs as a cancellable, polled job on the same registry as synthesis. There is no SSE.
+- A rate limit (HTTP 429) is reported with how long it lasts.
+- **Install from a folder**, for machines with no usable connection, verified against the same hashes.
+- The editor offers a download only when a page needs a language that isn't installed, next to Convert. A language comes up as soon as its model lands.
+- Installed files are re-hashed whenever `/models/status` is asked.
+
+**Hosting.** The MMS files come from the `hadamard-2/mms-tts-*-onnx` Hugging Face repos and Kokoro from upstream `onnx-community/Kokoro-82M-v1.0-ONNX`. Every URL points at `resolve/main`, a moving branch. The SHA-256 pins the *content* but not the *URL*, so an upstream re-upload would not install a wrong model — it would make every new download fail its checksum. Pinning each URL to a commit revision closes this gap.
+
+**Packaging, built in M4.**
+
+- `sidecar/hearbook_sidecar.spec` freezes the sidecar as a PyInstaller onefile binary of about 160 MB, with no torch.
+- `scripts/build-sidecar.sh` installs it as `src-tauri/binaries/hearbook-sidecar-<target-triple>`, which is where Tauri's `externalBin` looks.
+- The frozen binary was verified to start and to synthesize both English and Amharic.
+- Rust hands the sidecar `HEARBOOK_MODELS_DIR`, so models survive the onefile's temp extraction.
+- A guard turns espeak-ng's 159-character data-path limit into a readable error instead of a silent exit.
+
+**Still open for M6:**
+
+- **`tauri build` does not build the sidecar.** `beforeBuildCommand` is only `bun run build`, and `src-tauri/binaries/` is gitignored, so a release bundles whatever binary happens to be sitting there. In the main checkout on 2026-09-23 that was a 21 MB binary dated 16 June. That predates the TTS engines — the TTS build is about 160 MB — so a release built today would ship a sidecar that cannot speak.
+- **Only `x86_64-unknown-linux-gnu` has ever been built.** The spec's native-library collection was written and verified on Linux, so Windows and macOS are untried. Windows is also where the espeak path limit is most likely to fire, because the onefile unpacks under the user's profile.
+- **The build environment needs a Rust toolchain** while `num2words2` is pinned to git (see Risks).
+- **Startup cost is unmeasured.** The onefile unpacks about 160 MB to a temp directory on every launch. `/models/status` also hashes every installed file on every call (about 670 MB with all four languages installed); its docstring says a full verify takes well under a second, which has not been re-measured on slower disks.
+- **Retry with backoff** was deliberately left out in M4: a stopped download resumes when the user asks again. Whether M6 automates that is a decision still to make.
+- **Surviving a restart mid-download** works in the sense that the `.part` survives and the next request resumes it. Nothing resumes on its own.
+- **Removing an installed language** to reclaim disk space is not possible — there is no command for it.
+- **Gating project creation on models is obsolete.** It was specified when import needed docling. Since M3, import and editing need no model at all; only Convert does, and M4 put the offer there.
 
 ## Frontend wiring
 
-No new screens. Hook points into existing components:
+All of the original hook points are wired except export:
 
-- `src/components/home/home.tsx` → load real `projects`; the "new project" button opens the import flow.
-- `src/components/editor/editor.tsx` → load real `pages`; export button calls the MP3 export command.
-- `src/components/editor/center-panel.tsx` → pdf.js render + real extracted/edited text; persist edits.
-- `src/components/editor/settings-panel.tsx` → real voice list (English only; hidden for MMS single-speaker languages), rate→speed, audio preview via `/tts`; **remove the pitch slider**; persist settings.
-- `src/components/editor/page-panel.tsx` → real done/remaining counts from `pages.done`.
+- `src/components/home/home.tsx` — real `projects`; import by button or drop; rename and delete. **Done.**
+- `src/components/editor/center-panel.tsx` — pdf.js render, extracted/edited text, autosave, undo/redo, find on page. **Done.**
+- `src/components/editor/settings-panel.tsx` — real voice list (English; a single named voice for MMS), rate, per-page conversion with progress and cancel, Web Audio playback with a waveform; pitch slider removed. **Done.**
+- `src/components/editor/page-panel.tsx` — real done/remaining counts from `pages.done`. **Done.**
+- Export — the title-bar menu's **Export audiobook** item exists but is disabled. **M5.**
 
 ## Milestones (each independently reviewable & testable)
 
-- [ ] **M0 — Sidecar harness.** Bundle the Python sidecar; Rust spawns/supervises it; `/health` handshake; remove the `greet` stub.
-- [ ] **M1 — Persistence + import.** SQLite schema + commands; wire Home to real projects; PDF import (dialog → copy → create project).
-- [ ] **M2 — PDF render.** pdf.js in the preview/side-by-side panels (real pages, not mock).
-- [ ] **M3 — Extraction.** docling `/extract` SSE; text-layer-first; EasyOCR fallback for Latin-script projects (English/Oromo), no OCR for Ge'ez (Amharic/Tigrigna); stream per-page text into the editor; offline `artifacts_path`.
-- [ ] **M4 — TTS preview.** Kokoro (en) + MMS (am/ti/om) `/tts`; wire settings preview + per-page audio; real English voice list.
-- [ ] **M5 — Export.** Per-page synth caching + MP3 stitch/encode with progress.
-- [ ] **M6 — First-run download UX + packaging.** Model download flow; bundle-size and startup polish.
+- [x] **M0 — Sidecar harness.** Bundle the Python sidecar; Rust spawns/supervises it; `/health` handshake; remove the `greet` stub.
+- [x] **M1 — Persistence + import.** SQLite schema + commands; wire Home to real projects; PDF import (dialog → copy → create project).
+- [x] **M2 — PDF render.** pdf.js in the preview/side-by-side panels (real pages, not mock).
+- [x] **M3 — Extraction.** *Narrowed:* pdf.js text-layer extraction at import for all four languages, with paragraph reflow and header/footer removal; no docling and no OCR. See §2.
+- [x] **M4 — TTS preview.** Kokoro (en) + MMS (am/ti/om) as polled jobs; per-page conversion with progress, cancel and freshness tracking; real English voice list; Web Audio playback; the download slice of M6 (resumable, verified, install from folder); a frozen sidecar.
+- [ ] **M5 — Export.** Per-export voice, rate and page range; synthesize missing or stale pages, reuse fresh ones; stitch and encode to MP3; progress and cancel across a multi-hour run. Per-page caching already exists from M4. See §6, including its open questions.
+- [ ] **M6 — Download completion + packaging.** Most of the download handler shipped in M4. What remains: revision-pinned URLs, removing a language, deciding on auto-retry and auto-resume, making `tauri build` build the sidecar, Windows and macOS builds, and measuring startup. See §7.
 
 ## Risks & things to verify at implementation time
 
-- **Pin every package/API against the actually-installed version** before coding (per project convention): `docling`, `kokoro-onnx` (vs the `kokoro` PyTorch package; note its API is `get_voices()` and `create(..., is_phonemes=True)`), `misaki` (English G2P) + `espeak-ng`, `sherpa-onnx`, `uroman`, and the MP3 encoder. Treat the names here as intent to verify, not gospel.
-- **Bundle size.** docling pulls CPU PyTorch; PyInstaller + ONNX Runtime + Torch makes a large sidecar. Acceptable for desktop, but plan installer/runtime size and consider what's bundled vs first-run-downloaded.
-- **TTS romanization quality.** Validate `uroman` output for Amharic/Tigrigna (Ge'ez) and the Latin handling for Oromo on real textbook text; this is the TTS area most likely to need iteration.
-- **English G2P / phonemizer bundling.** The Kokoro path needs a phonemizer bundled offline — recommended misaki + eSpeak-NG fallback (or the lighter built-in eSpeak-only tokenizer). Verify the exact misaki extras (`misaki[en]`, the heavier `trf=True` transformer variant vs `trf=False`) and that PyInstaller actually collects misaki's data files **and** the eSpeak-NG library + data. This is the English analogue of the `uroman` romanization risk, and adds to bundle size.
+- **Pin every package/API against the actually-installed version** before coding (per project convention). For M5 that is chiefly the MP3 encoder, which has not been chosen. Treat names in this plan as intent to verify, not gospel — M3 and M4 both ended up without a library this plan named (docling, `kokoro-onnx`, misaki).
+- **Bundle size.** *Largely retired.* This was a docling/PyTorch concern, and docling left in M3. The frozen TTS sidecar is about 160 MB with no torch. Models are first-run downloads: 326 MB for English and 114 MB for each MMS language. What is still unmeasured is the onefile's per-launch unpack cost (§7).
+- **TTS romanization quality.** *Mostly retired.* The M4 spike found uroman transliterates Ge'ez cleanly and Oromo is already Latin; the problems that actually surfaced were dropped digits, `v`, lost sentence marks and symbols, all recorded under §3. What remains open is listening to real Ethiopian textbook prose, which has still barely been through the pipeline.
+- **English G2P / phonemizer bundling.** *Retired in M4.* misaki was not adopted, because it pulls in spacy and torch. English uses espeak-ng through `espeakng-loader`, whose wheel carries both the library and its data, and the frozen spec collects them explicitly. What was left of this risk turned out to be the 159-character data-path limit, which is now guarded (§7).
 - **Download robustness is itself a feature.** Large files over flaky networks is the failure mode that most hurts an offline-first app's first impression — it's why the download handler above is specced in detail rather than treated as a `curl`.
 - **Sample-rate mismatch** (Kokoro 24 kHz vs MMS 16 kHz) is avoided by single-language books, but the export/encode path should assert one rate per book.
 - **Deferred — symbols in the MMS languages.** `% + = ° $` and friends are silently deleted, and `² ½` and other non-Nd numerals abort the page. Out of v0 by decision; see the known-limitation note under §3 for the measurements and the two candidate fixes.
 - **Open — an MMS page with no sentence marks is unbounded work.** `.`, `!` and `?` are the only things that split a page into utterances, and they are also what keeps synthesis cost linear: past ~2,000 romanized characters a single unbroken run stops scaling (the 2,111→4,223 doubling cost 3.60×, not 2×). Romanization roughly doubles character count, so a 2,500-character Amharic page whose OCR dropped its `።` marks is ~4,900 characters in one call — four-plus minutes, one progress callback, and cancellation only at the very end. Nothing currently defends against this. The robust fix is a length-capped split at a word boundary in `prepare_geez`, independent of the punctuation allowlist; the threshold and the interaction with progress reporting are the open questions. See the measured table under §3.
-- **Deferred — Ge'ez OCR.** Out of v0 by decision. Only revisit (and take on the Tesseract cross-platform bundling cost) if text-layer-less Amharic/Tigrigna PDFs turn out to be common in practice.
+- **Deferred — OCR, in every language.** Out of v0 by decision: Ge'ez from the start, English and Oromo since M3. Only revisit if text-layer-less PDFs turn out to be common in practice; Ge'ez OCR additionally carries the Tesseract cross-platform bundling cost.
 - **Temporary — `num2words2` is pinned to upstream `main` by SHA (added 2026-09-20; merged upstream 2026-09-20; waiting on a release).** The released `num2words2` on PyPI returns Tigrinya numbers as its own Latin transliteration, which collides with uroman's romanization of the surrounding words and produced audio a native speaker could not follow. The fix was contributed by us, merged upstream as [`b3c8211`](https://github.com/gladiaio/num2words2/commit/b3c82111c33a0a8f52450bfd6a57a0a327f0a02f), and closes [issue #133](https://github.com/gladiaio/num2words2/issues/133) — but it is **not on PyPI yet**: the latest release is `v1.0.20` (2026-07-27) and upstream `main` has since bumped to `1.0.21`. Switching to PyPI before a new release would silently restore the broken behaviour. The pin therefore tracks `gladiaio/num2words2` **by commit SHA**, never by branch. **The trigger to remove it:** a release `>= 1.0.21` appears on PyPI — then delete the `[tool.uv.sources]` entry and depend on the version normally. Release cadence is irregular (v1.0.17 May 1, v1.0.18 Jul 17, v1.0.20 Jul 27), so this may sit for a while. **Do not leave the git pin longer than that:** `num2words2` is a maturin/PyO3 Rust extension, so a git dependency is compiled from source — measured at 5m 24s cold, 1m 59s warm — and needs a Rust toolchain wherever the sidecar's dependencies are installed, CI included.
 
 ## Out of scope (for now)
 
-- **Ge'ez-script OCR (Amharic/Tigrigna)** — text-layer-only in v0; no OCR fallback for these languages.
+- **OCR in any language** — text-layer-only in v0; a scanned page stays empty.
 - **Speaking symbols in Amharic/Tigrigna/Oromo** — no unit expansion and no pre-flight warning in v0; see §3.
 - M4B/chapters, multi-language books, cloud sync, voice cloning.
