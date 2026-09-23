@@ -140,6 +140,16 @@ def prepare_geez(text: str, language: str, romanize: Romanize) -> str:
 KOKORO_STYLE_ROWS = 510
 KOKORO_TOKEN_LIMIT = KOKORO_STYLE_ROWS - 1
 
+# How full a chunk is packed with whole sentences — far below the ceiling on
+# purpose. A chunk is one uninterruptible model call, and cancel and progress
+# can only act between chunks: packed to the ceiling, a chunk took 25-30 s on
+# CPU, which is how long Stop could take to land. At this size a typical chunk
+# is a few seconds. It costs nothing audible, since chunks still only break
+# between sentences. A single sentence longer than this is NOT split for it:
+# it stays whole up to KOKORO_TOKEN_LIMIT, so no sentence is cut mid-way just
+# to make Stop faster.
+KOKORO_PACK_TARGET = 150
+
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _COMMA_SPLIT = re.compile(r"(?<=[,;:])\s*")
 _SPACE_SPLIT = re.compile(r"\s+")
@@ -172,11 +182,14 @@ def _pack(
     vocab: dict[str, int],
     phonemize: Callable[[str], str],
     split_further: Callable[[str], list[list[int]]],
+    target: int = KOKORO_TOKEN_LIMIT,
 ) -> list[list[int]]:
     """Greedily fill chunks with pieces, delegating any oversized piece.
 
-    A piece that does not fit even alone is handed to `split_further` rather
-    than truncated: no path here may drop text.
+    Pieces are grouped while the chunk stays within `target`; a piece that is
+    bigger than `target` on its own still gets a chunk to itself, as long as
+    it fits the hard ceiling. A piece that does not fit even alone is handed
+    to `split_further` rather than truncated: no path here may drop text.
     """
     chunks: list[list[int]] = []
     current = ""
@@ -184,7 +197,7 @@ def _pack(
         if not piece.strip():
             continue
         candidate = f"{current} {piece}".strip() if current else piece.strip()
-        if len(tokenize(phonemize(candidate), vocab)) > KOKORO_TOKEN_LIMIT:
+        if len(tokenize(phonemize(candidate), vocab)) > target:
             if current:
                 chunks.append(tokenize(phonemize(current), vocab))
                 current = ""
@@ -228,4 +241,10 @@ def chunk_english(
     def by_clause(piece: str) -> list[list[int]]:
         return _pack(_COMMA_SPLIT.split(piece), vocab, phonemize, by_space)
 
-    return _pack(_SENTENCE_SPLIT.split(text.strip()), vocab, phonemize, by_clause)
+    return _pack(
+        _SENTENCE_SPLIT.split(text.strip()),
+        vocab,
+        phonemize,
+        by_clause,
+        target=KOKORO_PACK_TARGET,
+    )

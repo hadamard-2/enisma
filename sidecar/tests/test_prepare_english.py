@@ -1,4 +1,4 @@
-from prepare import KOKORO_STYLE_ROWS, KOKORO_TOKEN_LIMIT, chunk_english, tokenize
+from prepare import KOKORO_PACK_TARGET, KOKORO_STYLE_ROWS, KOKORO_TOKEN_LIMIT, chunk_english, tokenize
 
 VOCAB = {ch: i + 1 for i, ch in enumerate("abcdefghijklmnopqrstuvwxyz .,")}
 
@@ -128,3 +128,26 @@ def test_dotted_numbers_are_read_with_point():
 
 def test_a_dot_that_is_not_between_digits_is_kept():
     assert prepare_english("Section 1.5.\nThe U.S. system.") == "Section 1 point 5. The U.S. system."
+
+
+
+# ---- Chunk size -------------------------------------------------------------
+
+
+def test_short_sentences_are_grouped_only_up_to_the_pack_target():
+    # Stop can only land between chunks, so chunks are kept small: grouped
+    # sentences never push a chunk past the target, far below the ceiling.
+    sentence = "the cell is the basic unit of life. "  # 36 tokens with the fake
+    chunks = chunk_english(sentence * 40, VOCAB, fake_phonemize)
+    assert all(len(c) <= KOKORO_PACK_TARGET for c in chunks)
+    # ...but they are still grouped, not one call per sentence.
+    assert len(chunks) < 40
+
+
+def test_a_sentence_longer_than_the_target_stays_whole():
+    # Smaller chunks must never cost a sentence its prosody: one that is over
+    # the target but within the ceiling gets a chunk of its own, uncut.
+    words = "word " * 60  # 300 tokens, no comma to split at
+    long_sentence = words.strip() + "."
+    chunks = chunk_english(f"short one. {long_sentence} short two.", VOCAB, fake_phonemize)
+    assert [len(c) for c in chunks] == [len("short one."), len(long_sentence), len("short two.")]
