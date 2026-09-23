@@ -11,8 +11,10 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-set-fullscreen",
     "core:window:allow-close",
+    "core:window:allow-destroy",
     "opener:default",
     "dialog:allow-open",
+    "dialog:allow-save",
     {
       "identifier": "shell:allow-execute",
       "allow": [

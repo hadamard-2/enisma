@@ -2,6 +2,7 @@ mod audio;
 mod convert;
 mod db;
 mod export;
+mod export_run;
 mod import;
 mod models;
 mod pdf;
@@ -27,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState::new())
         .manage(convert::ActiveConversion::default())
+        .manage(export_run::ExportState::default())
         .manage(models::ActiveAcquisition::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -63,6 +65,11 @@ pub fn run() {
             convert::cancel_conversion_cmd,
             convert::get_page_audio_cmd,
             convert::list_voices_cmd,
+            export_run::export_plan_cmd,
+            export_run::start_export_cmd,
+            export_run::cancel_export_cmd,
+            export_run::export_status_cmd,
+            export_run::dismiss_export_cmd,
             models::model_status_cmd,
             models::acquire_model_cmd,
             models::cancel_model_acquisition_cmd,

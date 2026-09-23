@@ -2,9 +2,6 @@
 //! what is left can be stitched. Pure over a connection, so the whole policy
 //! is testable without a sidecar. Running it lives in `export_run`.
 
-// Used by export_run (Task 6); remove this line there.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

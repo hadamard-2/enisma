@@ -58,8 +58,6 @@ pub fn job_for(active: &Option<ActiveJob>, project_id: &str, page_no: i64) -> Op
 }
 
 /// The sidecar job an export is waiting on right now, if one is.
-// The export task (Task 6) is the first non-test caller.
-#[allow(dead_code)]
 pub fn export_job(active: &Option<ActiveJob>) -> Option<String> {
     active
         .as_ref()
@@ -100,8 +98,6 @@ impl ConversionClaim {
     }
 
     /// Record which page an export has moved on to.
-    // The export task (Task 6) is the first non-test caller.
-    #[allow(dead_code)]
     pub fn set_page(&self, page_no: i64) {
         if let Some(job) = self.0.lock().unwrap().as_mut() {
             job.page_no = page_no;
@@ -151,8 +147,6 @@ pub fn claim(
 }
 
 /// Take the conversion slot for a whole export, or refuse.
-// The export task (Task 6) is the first non-test caller.
-#[allow(dead_code)]
 pub fn claim_export(
     slot: &Arc<Mutex<Option<ActiveJob>>>,
     project_id: &str,

@@ -379,9 +379,6 @@ pub fn set_last_page(conn: &Connection, id: &str, page_no: i64) -> rusqlite::Res
 /// Deliberately does NOT `touch` the project, for the same reason
 /// `set_last_page` does not: exporting a book is not editing it, and
 /// `updated_at` orders the library.
-///
-/// Not yet called outside tests; Task 6's export command calls it.
-#[allow(dead_code)]
 pub fn save_export_settings(
     conn: &Connection,
     id: &str,
@@ -545,7 +542,11 @@ pub fn delete_project_cmd(
     active: State<'_, crate::convert::ActiveConversion>,
     id: String,
 ) -> Result<(), String> {
-    refuse_if_exporting(&active.0.lock().unwrap(), &id)?;
+    // The slot's lock is held through the delete, so an export cannot claim
+    // this project between the check and the removal. Lock order is slot, then
+    // database; nothing takes them the other way round.
+    let slot = active.0.lock().unwrap();
+    refuse_if_exporting(&slot, &id)?;
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
     delete_project(&mut conn, &data.0, &id)
 }
