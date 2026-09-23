@@ -3,7 +3,7 @@
 A FastAPI server that the Rust/Tauri core spawns and supervises. It binds to an
 ephemeral loopback port, prints a one-line JSON handshake to stdout once it is
 actually listening, and serves token-guarded routes for health, model
-acquisition, voices and TTS jobs.
+acquisition, voices, TTS jobs and MP3 stitching.
 
 TTS is here: English through Kokoro weights on ``onnxruntime`` (with
 ``espeakng-loader`` + ``phonemizer`` for G2P), and Amharic, Tigrigna and Oromo
@@ -38,6 +38,7 @@ import models
 from engine_kokoro import KokoroEngine, list_voices
 from engine_mms import MmsEngine
 from jobs import Job, JobRegistry
+from stitch import stitch
 from tts import Engine
 
 log = logging.getLogger("sidecar")
@@ -117,6 +118,40 @@ def _tts_work(req: TtsRequest):
 def start_tts(req: TtsRequest, _: None = Depends(_require_token)) -> dict:
     """Start synthesis and return at once. Poll GET /jobs/{id} for progress."""
     return {"jobId": JOBS.start(_tts_work(req))}
+
+
+class StitchRequest(BaseModel):
+    wavs: list[str]
+    gap_ms: int = 0
+    bitrate_kbps: int = 64
+    title: str = ""
+    out_path: str
+
+
+def _stitch_work(req: StitchRequest):
+    def work(job: Job) -> None:
+        def on_progress(fraction: float) -> bool:
+            job.progress = fraction
+            return not job.cancel.is_set()
+
+        sample_rate, duration_ms = stitch(
+            req.wavs, req.out_path, req.gap_ms, req.bitrate_kbps, req.title, on_progress
+        )
+        job.sample_rate = sample_rate
+        job.duration_ms = duration_ms
+
+    return work
+
+
+@app.post("/jobs/stitch")
+def start_stitch(req: StitchRequest, _: None = Depends(_require_token)) -> dict:
+    """Join WAVs into one MP3, as a job. Poll GET /jobs/{id} exactly as for synthesis.
+
+    Knows nothing about pages or projects: the caller sends the files in order,
+    the gap, the bitrate and the title. A refused input (mixed rates, stereo,
+    8-bit, a missing file) is an error job whose message names the file.
+    """
+    return {"jobId": JOBS.start(_stitch_work(req))}
 
 
 @app.get("/voices/{language}")
