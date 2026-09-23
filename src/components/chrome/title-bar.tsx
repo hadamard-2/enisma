@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HISTORY_EVENT } from "@/components/editor/center-panel";
+import { ExportPill } from "@/components/export/export-pill";
 import { ResizeBorders } from "./resize-borders";
 
 /** Window commands are all no-ops outside the desktop shell (`bun run dev`). */
@@ -87,7 +88,10 @@ export function TitleBar() {
           fullscreen={fullscreen}
           onToggleFullscreen={toggleFullscreen}
         />
-        <WindowControls maximized={maximized} />
+        <div className="flex items-center gap-2">
+          <ExportPill />
+          <WindowControls maximized={maximized} />
+        </div>
       </div>
     </>
   );

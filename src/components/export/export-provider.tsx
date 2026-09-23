@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -37,13 +45,24 @@ export function ExportProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const statusFromEventRef = useRef(false);
+
   useEffect(() => {
     if (!isTauri()) return;
-    // Picks up a run already in flight after a webview reload.
-    exportStatus().then(setStatus, console.error);
+    // Picks up a run already in flight after a webview reload. Guarded so a
+    // slow initial fetch can't clobber a status an event already delivered.
+    exportStatus().then((s) => {
+      if (!statusFromEventRef.current) setStatus(s);
+    }, console.error);
     const subs = [
-      listen<ExportStatus>("export://progress", (e) => setStatus(e.payload)),
-      listen<ExportStatus>("export://finished", (e) => setStatus(e.payload)),
+      listen<ExportStatus>("export://progress", (e) => {
+        statusFromEventRef.current = true;
+        setStatus(e.payload);
+      }),
+      listen<ExportStatus>("export://finished", (e) => {
+        statusFromEventRef.current = true;
+        setStatus(e.payload);
+      }),
     ];
     return () => {
       for (const s of subs) void s.then((f) => f());

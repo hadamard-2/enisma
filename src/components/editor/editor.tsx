@@ -46,7 +46,7 @@ import { cn } from "@/lib/utils";
 import { reconcileVoice } from "@/lib/voice-selection";
 import { resumePage } from "@/lib/resume-page";
 import { formatShortcut, MOD, SHIFT_KEY, sidecarHealth } from "@/lib/platform";
-import { useRegisterCommands } from "@/lib/app-commands";
+import { GOTO_PAGE_EVENT, useRegisterCommands, type GotoPageDetail } from "@/lib/app-commands";
 import { useExport } from "@/components/export/export-provider";
 import {
   ResizableHandle,
@@ -544,6 +544,9 @@ function Editor({
   // ---- Conversion ---------------------------------------------------------
   // The stored take for the active page, as the backend last described it.
   const [audio, setAudio] = useState<PageAudio | null>(null);
+  // Bumped when export writes a take into this book's page on screen, so the
+  // audio effect below refetches even though nothing else it depends on changed.
+  const [audioBump, setAudioBump] = useState(0);
   const [converting, setConverting] = useState(false);
   // A stop has been *requested*. Not the same as stopped: the engine only
   // reads the cancel flag between units of work, so this can last up to a
@@ -603,7 +606,7 @@ function Editor({
     return () => {
       cancelled = true;
     };
-  }, [project.id, activePage, language, voice, speed, saved, convertingActive]);
+  }, [project.id, activePage, language, voice, speed, saved, convertingActive, audioBump]);
 
   // The player belongs to the page on screen, so a page change stops it. A
   // conversion error is kept: it is filed under its own page.
@@ -623,6 +626,30 @@ function Editor({
     return () => {
       void unlisten.then((f) => f());
     };
+  }, [project.id]);
+
+  // Export writes takes into this book's pages while the user reads it. When
+  // it finishes the page on screen, fetch that page's audio again so the
+  // stale badge and the player reflect the new take.
+  useEffect(() => {
+    const unlisten = listen<{ projectId: string; pageNo: number }>("export://page-done", (e) => {
+      if (e.payload.projectId !== project.id) return;
+      if (e.payload.pageNo !== activePageRef.current) return;
+      setAudioBump((n) => n + 1);
+    });
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, [project.id]);
+
+  // Export's summary links a failed page here when this book is already open.
+  useEffect(() => {
+    function onGoto(e: Event) {
+      const { projectId, pageNo } = (e as CustomEvent<GotoPageDetail>).detail;
+      if (projectId === project.id) setActivePage(pageNo);
+    }
+    window.addEventListener(GOTO_PAGE_EVENT, onGoto);
+    return () => window.removeEventListener(GOTO_PAGE_EVENT, onGoto);
   }, [project.id]);
 
   // Leaving the editor is the user saying they no longer want this take, and
