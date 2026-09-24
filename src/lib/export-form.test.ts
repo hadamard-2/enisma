@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  compactPages,
   defaultFileName,
   exportDefaults,
   formatClock,
@@ -98,6 +99,15 @@ describe("file names", () => {
     expect(defaultFileName('Grade 9: "Cells" / Part 1')).toBe("Grade 9- -Cells- - Part 1.mp3");
     expect(defaultFileName("ባዮሎጂ")).toBe("ባዮሎጂ.mp3");
     expect(defaultFileName("   ")).toBe("audiobook.mp3");
+  });
+
+  it("adds the pages when only part of the book is exported", () => {
+    expect(defaultFileName("Biology 9", "1-5, 9")).toBe("Biology 9 (p. 1-5, 9).mp3");
+  });
+
+  it("writes pages back as compact ranges", () => {
+    expect(compactPages([1, 2, 3, 5, 9, 10])).toBe("1-3, 5, 9-10");
+    expect(compactPages([4])).toBe("4");
   });
 
   it("adds .mp3 only when it is missing", () => {

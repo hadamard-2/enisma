@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
+import { dirname, join } from "@tauri-apps/api/path";
 import {
   exportPlan,
   getProject,
@@ -10,6 +11,7 @@ import {
   type ProjectDetail,
 } from "@/lib/api";
 import {
+  compactPages,
   defaultFileName,
   exportDefaults,
   pagesOf,
@@ -126,8 +128,11 @@ export function ExportDialog({
 
   async function pickAndStart() {
     if (!project || !form || !pages || !canStart) return;
+    // `pages` is distinct and inside the book, so full length means every page.
+    const whole = pages.length === project.pageCount;
+    const name = defaultFileName(project.title, whole ? null : compactPages(pages));
     const picked = await save({
-      defaultPath: form.path ?? defaultFileName(project.title),
+      defaultPath: await suggestedPath(form.path, name),
       filters: [{ name: "MP3", extensions: ["mp3"] }],
     });
     if (!picked) return;
@@ -257,4 +262,14 @@ export function ExportDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** The last export's folder with this export's name, else just the name. */
+async function suggestedPath(lastPath: string | null, name: string): Promise<string> {
+  if (!lastPath) return name;
+  try {
+    return await join(await dirname(lastPath), name);
+  } catch {
+    return name;
+  }
 }

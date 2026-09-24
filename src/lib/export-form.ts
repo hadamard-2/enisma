@@ -66,13 +66,28 @@ export function pagesOf(form: ExportForm, pageCount: number): number[] | null {
   return parsePages(form.pagesText, pageCount);
 }
 
-/** `<title>.mp3`, with the characters Windows and macOS refuse replaced. */
-export function defaultFileName(title: string): string {
+/** Ascending pages written back as ranges: `[1, 2, 3, 5, 9]` → `1-3, 5, 9`. */
+export function compactPages(pages: number[]): string {
+  const parts: string[] = [];
+  for (let i = 0; i < pages.length; ) {
+    let j = i;
+    while (j + 1 < pages.length && pages[j + 1] === pages[j] + 1) j++;
+    parts.push(i === j ? `${pages[i]}` : `${pages[i]}-${pages[j]}`);
+    i = j + 1;
+  }
+  return parts.join(", ");
+}
+
+/**
+ * `<title>.mp3`, or `<title> (p. 1-5, 9).mp3` for part of the book, with the
+ * characters Windows and macOS refuse replaced.
+ */
+export function defaultFileName(title: string, pages: string | null = null): string {
   const safe = title
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ")
     .trim();
-  return `${safe || "audiobook"}.mp3`;
+  return `${safe || "audiobook"}${pages ? ` (p. ${pages})` : ""}.mp3`;
 }
 
 /** The GTK Save picker does not add the filter's extension; do it here. */
