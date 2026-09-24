@@ -358,11 +358,8 @@ export function SettingsPanel({
     <aside className="flex h-full min-h-0 flex-col bg-paper-2">
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="px-4.5 pt-4 pb-2">
-        <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-ink-3">
-          {t("ttsPanel.sectionLabel")}
-        </div>
         <div className="font-serif text-lg font-medium text-ink">
-          {t("ttsPanel.heading")}
+          {t("ttsPanel.sectionLabel")}
         </div>
         <div className="mt-1 text-xs text-ink-3">
           {t("ttsPanel.subtitle")}

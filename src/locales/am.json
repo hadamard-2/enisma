@@ -466,11 +466,7 @@
   "ttsPanel": {
     "sectionLabel": {
       "message": "የድምጽ ቅንብሮች",
-      "context": "Small uppercase label at the top of the right-hand panel in the editor."
-    },
-    "heading": {
-      "message": "ጽሑፍ ወደ-ንግግር",
-      "context": "Heading under 'Audio settings'. The technology that reads text aloud in a synthetic voice."
+      "context": "Heading at the top of the right-hand panel in the editor."
     },
     "subtitle": {
       "message": "በዚህ ፕሮጀክት ውስጥ ባሉ ሁሉም ገጾች ላይ ተተግብሯል።",

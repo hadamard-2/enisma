@@ -466,11 +466,7 @@
   "ttsPanel": {
     "sectionLabel": {
       "message": "Qindaa'ina sagalee",
-      "context": "Small uppercase label at the top of the right-hand panel in the editor."
-    },
-    "heading": {
-      "message": "Barreeffama-gara-Sagaleetti",
-      "context": "Heading under 'Audio settings'. The technology that reads text aloud in a synthetic voice."
+      "context": "Heading at the top of the right-hand panel in the editor."
     },
     "subtitle": {
       "message": "Pirojektii kana keessatti fuulota hundaaf ni hojjeta.",
