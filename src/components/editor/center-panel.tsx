@@ -168,7 +168,7 @@ export function CenterPanel({
                 {t(`center.${placeholder}`)}
               </div>
             )}
-            <div className="relative min-h-0 flex-1">
+            <div className="relative -mr-3.75 min-h-0 flex-1">
               {matches.length > 0 && (
                 <FindHighlights
                   text={text}
