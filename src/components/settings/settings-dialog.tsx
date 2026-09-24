@@ -55,7 +55,7 @@ export function SettingsDialog({
                       "flex cursor-pointer flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors",
                       active
                         ? "border-teal bg-teal-soft text-ink"
-                        : "border-line bg-surface text-ink-2 hover:border-line-2 hover:bg-paper-2",
+                        : "border-ink-4 bg-paper-2 text-ink-2 hover:border-ink-3 hover:bg-paper-3",
                     )}
                   >
                     <span className="flex w-full items-center gap-2">
@@ -65,7 +65,7 @@ export function SettingsDialog({
                         <Check size={14} strokeWidth={2.4} className="text-teal-ink" />
                       )}
                     </span>
-                    <span className="text-[11.5px] text-ink-3">{t(hintKey)}</span>
+                    <span className="text-[12px] text-ink-2">{t(hintKey)}</span>
                   </button>
                 );
               })}
@@ -94,7 +94,7 @@ export function SettingsDialog({
                     <span className="truncate">
                       {t(appLanguageLabelKey(l.code))}
                       {!l.translated && (
-                        <span className="text-ink-3">{t("settings.notTranslated")}</span>
+                        <span className="text-ink-2">{t("settings.notTranslated")}</span>
                       )}
                     </span>
                   </SelectItem>
@@ -111,7 +111,7 @@ export function SettingsDialog({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="m-0 mb-3 font-mono text-[10px] tracking-widest text-ink-3 uppercase">
+      <h2 className="m-0 mb-3 font-mono text-[11.5px] tracking-widest text-ink-2 uppercase">
         {title}
       </h2>
       {children}
