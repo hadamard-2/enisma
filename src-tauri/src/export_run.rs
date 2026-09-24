@@ -89,8 +89,7 @@ struct ExportRequest {
     title: String,
     voice: String,
     rate: f64,
-    first: i64,
-    last: i64,
+    pages: Vec<i64>,
     out_path: PathBuf,
 }
 
@@ -149,7 +148,7 @@ fn probe_writable(out_path: &Path) -> Result<(), String> {
 
 fn classify_now(db: &Db, req: &ExportRequest) -> Result<Vec<export::Classified>, String> {
     let conn = db.0.lock().unwrap();
-    export::classify(&conn, &req.project_id, &req.voice, req.rate, req.first, req.last)
+    export::classify(&conn, &req.project_id, &req.voice, req.rate, &req.pages)
         .map_err(|e| e.to_string())
 }
 
@@ -347,13 +346,12 @@ pub fn export_plan_cmd(
     project_id: String,
     voice: String,
     rate: f64,
-    first_page: i64,
-    last_page: i64,
+    pages: Vec<i64>,
 ) -> Result<ExportPlan, String> {
     let conn = db.0.lock().unwrap();
     let detail = crate::project::get_project(&conn, &project_id).map_err(|e| e.to_string())?;
-    export::validate_range(first_page, last_page, detail.page_count)?;
-    let states = export::classify(&conn, &project_id, &voice, rate, first_page, last_page)
+    let pages = export::normalize_pages(pages, detail.page_count)?;
+    let states = export::classify(&conn, &project_id, &voice, rate, &pages)
         .map_err(|e| e.to_string())?;
     Ok(export::plan(&states))
 }
@@ -368,8 +366,7 @@ pub fn start_export_cmd(
     project_id: String,
     voice: String,
     rate: f64,
-    first_page: i64,
-    last_page: i64,
+    pages: Vec<i64>,
     out_path: String,
 ) -> Result<(), String> {
     // Claim first, then read the project. Deleting a project checks the slot
@@ -380,18 +377,18 @@ pub fn start_export_cmd(
     // Reset while the claim is fresh: a cancel pressed from here on, even
     // before the run starts, must stick.
     export_state.cancel.store(false, Ordering::SeqCst);
-    let title = {
+    let (title, pages) = {
         let conn = db.0.lock().unwrap();
         let detail = crate::project::get_project(&conn, &project_id).map_err(|e| e.to_string())?;
-        export::validate_range(first_page, last_page, detail.page_count)?;
-        detail.title
+        let pages = export::normalize_pages(pages, detail.page_count)?;
+        (detail.title, pages)
     };
     let out_path = PathBuf::from(out_path);
     probe_writable(&out_path)?;
     {
         let conn = db.0.lock().unwrap();
         crate::project::save_export_settings(
-            &conn, &project_id, &voice, rate, first_page, last_page, &out_path.to_string_lossy(),
+            &conn, &project_id, &voice, rate, &out_path.to_string_lossy(),
         )
         .map_err(|e| e.to_string())?;
     }
@@ -401,8 +398,7 @@ pub fn start_export_cmd(
         title: title.clone(),
         voice,
         rate,
-        first: first_page,
-        last: last_page,
+        pages,
         out_path,
     };
     let mut rep = Reporter {

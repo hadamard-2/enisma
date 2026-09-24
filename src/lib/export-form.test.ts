@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  clampPage,
   defaultFileName,
   exportDefaults,
   formatClock,
   overallFraction,
   pillLabel,
-  rangeIsValid,
-  rangeOf,
+  pagesOf,
+  parsePages,
   timeLeftMs,
   withMp3Extension,
 } from "./export-form";
@@ -20,8 +19,6 @@ const project = {
   rate: 1.1,
   exportVoice: null,
   exportRate: null,
-  exportFirstPage: null,
-  exportLastPage: null,
   exportPath: null,
 };
 
@@ -45,35 +42,25 @@ describe("exportDefaults", () => {
       voice: "af_heart",
       rate: 1.1,
       wholeBook: true,
-      first: 1,
-      last: 171,
+      pagesText: "",
       path: null,
     });
   });
 
-  it("prefers the last export's settings", () => {
+  it("prefers the last export's voice and rate but starts on the whole book", () => {
     const d = exportDefaults({
       ...project,
       exportVoice: "am_adam",
       exportRate: 0.9,
-      exportFirstPage: 10,
-      exportLastPage: 20,
       exportPath: "/home/u/b.mp3",
     });
     expect(d).toEqual({
       voice: "am_adam",
       rate: 0.9,
-      wholeBook: false,
-      first: 10,
-      last: 20,
+      wholeBook: true,
+      pagesText: "",
       path: "/home/u/b.mp3",
     });
-  });
-
-  it("treats a saved range covering the book as the whole book", () => {
-    expect(exportDefaults({ ...project, exportFirstPage: 1, exportLastPage: 171 }).wholeBook).toBe(
-      true,
-    );
   });
 
   it("uses an empty voice when nothing was ever chosen", () => {
@@ -81,26 +68,27 @@ describe("exportDefaults", () => {
   });
 });
 
-describe("ranges", () => {
-  it("clamps a page into the book", () => {
-    expect(clampPage(0, 10)).toBe(1);
-    expect(clampPage(11, 10)).toBe(10);
-    expect(clampPage(4.6, 10)).toBe(5);
-    expect(clampPage(Number.NaN, 10)).toBe(1);
+describe("pages", () => {
+  it("parses ranges and single pages into sorted, distinct pages", () => {
+    expect(parsePages("1-3, 9, 5", 10)).toEqual([1, 2, 3, 5, 9]);
+    expect(parsePages("8-10 2 9", 10)).toEqual([2, 8, 9, 10]);
+    expect(parsePages("4–2", 10)).toEqual([2, 3, 4]);
+    expect(parsePages(" 3 , 3,", 10)).toEqual([3]);
   });
 
-  it("resolves the whole book or the chosen pages", () => {
-    const form = { voice: "", rate: 1, wholeBook: true, first: 3, last: 4, path: null };
-    expect(rangeOf(form, 9)).toEqual({ first: 1, last: 9 });
-    expect(rangeOf({ ...form, wholeBook: false }, 9)).toEqual({ first: 3, last: 4 });
+  it("rejects an empty, malformed or out-of-book list", () => {
+    expect(parsePages("", 10)).toBeNull();
+    expect(parsePages(" , ", 10)).toBeNull();
+    expect(parsePages("1-", 10)).toBeNull();
+    expect(parsePages("a", 10)).toBeNull();
+    expect(parsePages("0-2", 10)).toBeNull();
+    expect(parsePages("9-11", 10)).toBeNull();
   });
 
-  it("accepts only an ordered range inside the book", () => {
-    expect(rangeIsValid(1, 9, 9)).toBe(true);
-    expect(rangeIsValid(5, 5, 9)).toBe(true);
-    expect(rangeIsValid(6, 5, 9)).toBe(false);
-    expect(rangeIsValid(0, 5, 9)).toBe(false);
-    expect(rangeIsValid(1, 10, 9)).toBe(false);
+  it("resolves the whole book or the typed pages", () => {
+    const form = { voice: "", rate: 1, wholeBook: true, pagesText: "3-4", path: null };
+    expect(pagesOf(form, 4)).toEqual([1, 2, 3, 4]);
+    expect(pagesOf({ ...form, wholeBook: false }, 9)).toEqual([3, 4]);
   });
 });
 

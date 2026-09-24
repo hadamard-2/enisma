@@ -8,8 +8,8 @@ export type ExportForm = {
   voice: string;
   rate: number;
   wholeBook: boolean;
-  first: number;
-  last: number;
+  /** The typed page list, e.g. `1-5, 9, 12-20`. */
+  pagesText: string;
   /** Where the last export was saved, offered to the Save picker. */
   path: string | null;
 };
@@ -21,41 +21,49 @@ type Defaults = Pick<
   | "rate"
   | "exportVoice"
   | "exportRate"
-  | "exportFirstPage"
-  | "exportLastPage"
   | "exportPath"
 >;
 
-export function clampPage(n: number, pageCount: number): number {
-  if (!Number.isFinite(n)) return 1;
-  return Math.min(Math.max(1, Math.round(n)), Math.max(1, pageCount));
-}
-
 /**
- * The last export's settings, else the panel's voice and rate over the whole
- * book. Defaulting to the panel's is what makes existing takes likely to match
- * and be reused.
+ * The last export's voice and rate, else the panel's, over the whole book.
+ * Defaulting to the panel's is what makes existing takes likely to match and
+ * be reused. The pages are not remembered.
  */
 export function exportDefaults(p: Defaults): ExportForm {
-  let first = clampPage(p.exportFirstPage ?? 1, p.pageCount);
-  let last = clampPage(p.exportLastPage ?? p.pageCount, p.pageCount);
-  if (first > last) [first, last] = [1, p.pageCount];
   return {
     voice: p.exportVoice ?? p.voice ?? "",
     rate: p.exportRate ?? p.rate,
-    wholeBook: first === 1 && last === p.pageCount,
-    first,
-    last,
+    wholeBook: true,
+    pagesText: "",
     path: p.exportPath,
   };
 }
 
-export function rangeOf(form: ExportForm, pageCount: number): { first: number; last: number } {
-  return form.wholeBook ? { first: 1, last: pageCount } : { first: form.first, last: form.last };
+/**
+ * Parse a page list like `1-5, 9, 12-20` into ascending, distinct page
+ * numbers. Commas or spaces separate items; a range may be written either way
+ * round. Null when anything is malformed, outside the book, or nothing is left.
+ */
+export function parsePages(text: string, pageCount: number): number[] | null {
+  const items = text.split(/[\s,]+/).filter(Boolean);
+  if (items.length === 0) return null;
+  const pages = new Set<number>();
+  for (const item of items) {
+    const m = /^(\d+)(?:[-–—](\d+))?$/.exec(item);
+    if (!m) return null;
+    const a = Number(m[1]);
+    const b = m[2] === undefined ? a : Number(m[2]);
+    const [lo, hi] = a <= b ? [a, b] : [b, a];
+    if (lo < 1 || hi > pageCount) return null;
+    for (let n = lo; n <= hi; n++) pages.add(n);
+  }
+  return [...pages].sort((x, y) => x - y);
 }
 
-export function rangeIsValid(first: number, last: number, pageCount: number): boolean {
-  return first >= 1 && last <= pageCount && first <= last;
+/** The pages an export covers, or null when the typed list is not usable. */
+export function pagesOf(form: ExportForm, pageCount: number): number[] | null {
+  if (form.wholeBook) return Array.from({ length: pageCount }, (_, i) => i + 1);
+  return parsePages(form.pagesText, pageCount);
 }
 
 /** `<title>.mp3`, with the characters Windows and macOS refuse replaced. */

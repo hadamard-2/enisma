@@ -34,8 +34,6 @@ export interface ProjectDetail {
   /** The last export's settings, offered again by the Export dialog; null if never exported. */
   exportVoice: string | null;
   exportRate: number | null;
-  exportFirstPage: number | null;
-  exportLastPage: number | null;
   /** Absolute path the last export was saved to. */
   exportPath: string | null;
 }
@@ -255,25 +253,22 @@ export const exportPlan = (
   projectId: string,
   voice: string,
   rate: number,
-  firstPage: number,
-  lastPage: number,
-) => invoke<ExportPlan>("export_plan_cmd", { projectId, voice, rate, firstPage, lastPage });
+  pages: number[],
+) => invoke<ExportPlan>("export_plan_cmd", { projectId, voice, rate, pages });
 
 /**
  * Start an export and return at once; it runs in the background for as long
  * as it takes. Progress arrives on `export://progress`, each finished page on
  * `export://page-done`, and the end on `export://finished`. Rejects straight
- * away when the slot is busy, the range is wrong, or `outPath` cannot be written.
+ * away when the slot is busy, a page is outside the book, or `outPath` cannot be written.
  */
 export const startExport = (
   projectId: string,
   voice: string,
   rate: number,
-  firstPage: number,
-  lastPage: number,
+  pages: number[],
   outPath: string,
-) =>
-  invoke<void>("start_export_cmd", { projectId, voice, rate, firstPage, lastPage, outPath });
+) => invoke<void>("start_export_cmd", { projectId, voice, rate, pages, outPath });
 
 /** *Request* a stop. The run ends with a `cancelled` outcome once the current step notices. */
 export const cancelExport = () => invoke<void>("cancel_export_cmd");

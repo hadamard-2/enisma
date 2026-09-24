@@ -580,11 +580,11 @@
     },
     "pageRange": {
       "message": "ገጻት",
-      "context": "Radio option in the Export dialog: export only the pages typed in the two boxes after it."
+      "context": "Radio option in the Export dialog: export only the pages typed in the box after it."
     },
-    "rangeTo": {
-      "message": "ክሳብ",
-      "context": "Word between the two page-number boxes, as in 'Pages 10 to 20'."
+    "pagesPlaceholder": {
+      "message": "ንኣብነት 1-5, 9, 12-20",
+      "context": "Placeholder in the page-list box of the Export dialog, showing the format: ranges and single pages separated by commas."
     },
     "plan": {
       "message": "{total, plural, one {# ገጽ} other {# ገጻት}} · {ready} ድሉዋት · {toSynthesize} ዝንበባ · {empty} ባዶ",
@@ -603,8 +603,8 @@
       "context": "Shown in the Export dialog when the chosen pages contain no text at all."
     },
     "invalidRange": {
-      "message": "ኣብዚ መጽሓፍ ዘለዋ ገጻት ምረጽ።",
-      "context": "Shown in the Export dialog when the typed page range is out of order or outside the book."
+      "message": "ኣብዚ መጽሓፍ ዘለዋ ገጻት ጽሓፍ፤ ንኣብነት 1-5, 9, 12-20።",
+      "context": "Shown in the Export dialog when the typed page list is empty, malformed, or outside the book."
     },
     "cancel": {
       "message": "ሰርዝ",

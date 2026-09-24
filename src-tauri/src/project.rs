@@ -129,8 +129,6 @@ pub struct ProjectDetail {
     /// export is exporting again with these: the finished takes are reused.
     pub export_voice: Option<String>,
     pub export_rate: Option<f64>,
-    pub export_first_page: Option<i64>,
-    pub export_last_page: Option<i64>,
     /// Absolute path the last export was saved to.
     pub export_path: Option<String>,
 }
@@ -146,7 +144,7 @@ pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetai
     let mut detail = conn.query_row(
         "SELECT title, language, page_count, pdf_path, rate, voice, last_page,
                 (SELECT COUNT(*) FROM pages WHERE project_id = p.id AND source_text IS NULL),
-                export_voice, export_rate, export_first_page, export_last_page, export_path
+                export_voice, export_rate, export_path
          FROM projects p WHERE id = ?1",
         [id],
         |r| {
@@ -163,9 +161,7 @@ pub fn get_project(conn: &Connection, id: &str) -> rusqlite::Result<ProjectDetai
                 pages_missing_text: r.get(7)?,
                 export_voice: r.get(8)?,
                 export_rate: r.get(9)?,
-                export_first_page: r.get(10)?,
-                export_last_page: r.get(11)?,
-                export_path: r.get(12)?,
+                export_path: r.get(10)?,
             })
         },
     )?;
@@ -384,16 +380,13 @@ pub fn save_export_settings(
     id: &str,
     voice: &str,
     rate: f64,
-    first: i64,
-    last: i64,
     path: &str,
 ) -> rusqlite::Result<()> {
     let n = conn.execute(
         "UPDATE projects
-            SET export_voice = ?2, export_rate = ?3, export_first_page = ?4,
-                export_last_page = ?5, export_path = ?6
+            SET export_voice = ?2, export_rate = ?3, export_path = ?4
           WHERE id = ?1",
-        params![id, voice, rate, first, last, path],
+        params![id, voice, rate, path],
     )?;
     if n == 0 {
         return Err(rusqlite::Error::QueryReturnedNoRows);
@@ -939,8 +932,6 @@ mod tests {
         let d = get_project(&conn, "p1").unwrap();
         assert_eq!(d.export_voice, None);
         assert_eq!(d.export_rate, None);
-        assert_eq!(d.export_first_page, None);
-        assert_eq!(d.export_last_page, None);
         assert_eq!(d.export_path, None);
     }
 
@@ -956,13 +947,11 @@ mod tests {
             .query_row("SELECT updated_at FROM projects WHERE id = 'p1'", [], |r| r.get(0))
             .unwrap();
 
-        save_export_settings(&conn, "p1", "af_heart", 1.2, 2, 3, "/home/u/Biology.mp3").unwrap();
+        save_export_settings(&conn, "p1", "af_heart", 1.2, "/home/u/Biology.mp3").unwrap();
 
         let d = get_project(&conn, "p1").unwrap();
         assert_eq!(d.export_voice.as_deref(), Some("af_heart"));
         assert_eq!(d.export_rate, Some(1.2));
-        assert_eq!(d.export_first_page, Some(2));
-        assert_eq!(d.export_last_page, Some(3));
         assert_eq!(d.export_path.as_deref(), Some("/home/u/Biology.mp3"));
         let after: String = conn
             .query_row("SELECT updated_at FROM projects WHERE id = 'p1'", [], |r| r.get(0))
@@ -973,7 +962,7 @@ mod tests {
     #[test]
     fn saving_export_settings_for_an_unknown_project_fails() {
         let conn = db::open_in_memory().unwrap();
-        assert!(save_export_settings(&conn, "nope", "", 1.0, 1, 1, "/x.mp3").is_err());
+        assert!(save_export_settings(&conn, "nope", "", 1.0, "/x.mp3").is_err());
     }
 
     #[test]

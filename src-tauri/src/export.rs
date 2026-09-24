@@ -49,7 +49,7 @@ pub struct Failure {
 
 pub type Failures = HashMap<i64, Failure>;
 
-/// Judge every page in `first..=last` against an export's voice and rate.
+/// Judge every page in `pages` (ascending, as `normalize_pages` leaves it) against an export's voice and rate.
 ///
 /// Mirrors `convert::effective_text`'s precedence (the edit, else the
 /// extraction) and uses `audio::is_fresh` itself, so export and the panel can
@@ -59,8 +59,7 @@ pub fn classify(
     project_id: &str,
     voice: &str,
     rate: f64,
-    first: i64,
-    last: i64,
+    pages: &[i64],
 ) -> rusqlite::Result<Vec<Classified>> {
     let language: String = conn.query_row(
         "SELECT language FROM projects WHERE id = ?1",
@@ -72,10 +71,10 @@ pub fn classify(
                 audio_path, audio_text_hash, audio_voice, audio_language,
                 audio_rate, audio_sample_rate, audio_duration_ms, audio_created_at
            FROM pages
-          WHERE project_id = ?1 AND page_no BETWEEN ?2 AND ?3
+          WHERE project_id = ?1
           ORDER BY page_no",
     )?;
-    let rows = stmt.query_map(params![project_id, first, last], |r| {
+    let rows = stmt.query_map(params![project_id], |r| {
         let edited: Option<String> = r.get(1)?;
         let source: Option<String> = r.get(2)?;
         Ok((
@@ -96,6 +95,9 @@ pub fn classify(
     let mut out = Vec::new();
     for row in rows {
         let (page_no, text, take) = row?;
+        if pages.binary_search(&page_no).is_err() {
+            continue;
+        }
         out.push(judge(page_no, &text, &take, &language, voice, rate));
     }
     Ok(out)
@@ -184,13 +186,18 @@ pub fn plan(states: &[Classified]) -> ExportPlan {
     }
 }
 
-pub fn validate_range(first: i64, last: i64, page_count: i64) -> Result<(), String> {
-    if first < 1 || last > page_count || first > last {
-        return Err(format!(
-            "pages {first}–{last} are not a range within this book's {page_count} pages"
-        ));
+/// Sort and dedupe the requested pages, so the audiobook plays in book order
+/// and no page is read twice, then check they are all in the book.
+pub fn normalize_pages(mut pages: Vec<i64>, page_count: i64) -> Result<Vec<i64>, String> {
+    pages.sort_unstable();
+    pages.dedup();
+    if pages.is_empty() {
+        return Err("no pages were chosen to export".into());
     }
-    Ok(())
+    if let Some(bad) = pages.iter().find(|&&p| p < 1 || p > page_count) {
+        return Err(format!("page {bad} is not within this book's {page_count} pages"));
+    }
+    Ok(pages)
 }
 
 /// The WAVs to stitch, in page order, resolved against the data dir.
@@ -228,7 +235,7 @@ pub fn stitch_inputs(
         wavs.push(data_dir.join(take.path.unwrap_or_default()));
     }
     if wavs.is_empty() {
-        return Err("there is nothing to export: every page in this range is empty".into());
+        return Err("there is nothing to export: every chosen page is empty".into());
     }
     Ok(wavs)
 }
@@ -256,7 +263,7 @@ mod tests {
     }
 
     fn states_of(conn: &Connection) -> Vec<(i64, PageState)> {
-        classify(conn, "p1", "af_heart", 1.0, 1, 4)
+        classify(conn, "p1", "af_heart", 1.0, &[1, 2, 3, 4])
             .unwrap()
             .into_iter()
             .map(|c| (c.page_no, c.state))
@@ -303,15 +310,15 @@ mod tests {
     }
 
     #[test]
-    fn classify_only_looks_inside_the_range() {
+    fn classify_only_looks_at_the_chosen_pages() {
         let mut conn = db::open_in_memory().unwrap();
         seed(&mut conn);
-        let pages: Vec<i64> = classify(&conn, "p1", "af_heart", 1.0, 2, 3)
+        let pages: Vec<i64> = classify(&conn, "p1", "af_heart", 1.0, &[1, 3])
             .unwrap()
             .iter()
             .map(|c| c.page_no)
             .collect();
-        assert_eq!(pages, vec![2, 3]);
+        assert_eq!(pages, vec![1, 3]);
     }
 
     fn needs(page: i64, text: &str) -> Classified {
@@ -358,17 +365,16 @@ mod tests {
         seed(&mut conn);
         take(&conn, 1, "one", "af_heart", 1.0, 24000);
         take(&conn, 2, "two", "am_adam", 1.0, 24000);
-        let p = plan(&classify(&conn, "p1", "af_heart", 1.0, 1, 4).unwrap());
+        let p = plan(&classify(&conn, "p1", "af_heart", 1.0, &[1, 2, 3, 4]).unwrap());
         assert_eq!(p, ExportPlan { total: 4, ready: 1, to_synthesize: 2, replacing: 1, empty: vec![3] });
     }
 
     #[test]
-    fn validate_range_accepts_the_book_and_rejects_the_rest() {
-        assert!(validate_range(1, 4, 4).is_ok());
-        assert!(validate_range(2, 2, 4).is_ok());
-        assert!(validate_range(0, 4, 4).is_err());
-        assert!(validate_range(1, 5, 4).is_err());
-        assert!(validate_range(3, 2, 4).is_err());
+    fn normalize_pages_sorts_dedupes_and_rejects_pages_outside_the_book() {
+        assert_eq!(normalize_pages(vec![4, 1, 2, 1], 4).unwrap(), vec![1, 2, 4]);
+        assert!(normalize_pages(vec![], 4).is_err());
+        assert!(normalize_pages(vec![0, 2], 4).is_err());
+        assert!(normalize_pages(vec![2, 5], 4).is_err());
     }
 
     #[test]
@@ -378,7 +384,7 @@ mod tests {
         for (page, text) in [(1, "one"), (2, "two"), (4, "four")] {
             take(&conn, page, text, "af_heart", 1.0, 24000);
         }
-        let states = classify(&conn, "p1", "af_heart", 1.0, 1, 4).unwrap();
+        let states = classify(&conn, "p1", "af_heart", 1.0, &[1, 2, 3, 4]).unwrap();
         let wavs = stitch_inputs(&conn, "p1", &states, Path::new("/data")).unwrap();
         assert_eq!(
             wavs,
@@ -397,7 +403,7 @@ mod tests {
         take(&conn, 1, "one", "af_heart", 1.0, 24000);
         take(&conn, 2, "two", "af_heart", 1.0, 16000);
         take(&conn, 4, "four", "af_heart", 1.0, 24000);
-        let states = classify(&conn, "p1", "af_heart", 1.0, 1, 4).unwrap();
+        let states = classify(&conn, "p1", "af_heart", 1.0, &[1, 2, 3, 4]).unwrap();
         let err = stitch_inputs(&conn, "p1", &states, Path::new("/data")).unwrap_err();
         assert_eq!(err, "page 2's audio is 16000 Hz, but page 1's is 24000 Hz");
     }
@@ -407,7 +413,7 @@ mod tests {
         let mut conn = db::open_in_memory().unwrap();
         seed(&mut conn);
         take(&conn, 1, "one", "af_heart", 1.0, 24000);
-        let states = classify(&conn, "p1", "af_heart", 1.0, 1, 4).unwrap();
+        let states = classify(&conn, "p1", "af_heart", 1.0, &[1, 2, 3, 4]).unwrap();
         let err = stitch_inputs(&conn, "p1", &states, Path::new("/data")).unwrap_err();
         assert_eq!(err, "page 2 has no current audio to stitch");
     }
@@ -416,8 +422,8 @@ mod tests {
     fn stitch_inputs_refuse_a_range_with_nothing_to_say() {
         let mut conn = db::open_in_memory().unwrap();
         seed(&mut conn);
-        let states = classify(&conn, "p1", "af_heart", 1.0, 3, 3).unwrap();
+        let states = classify(&conn, "p1", "af_heart", 1.0, &[3]).unwrap();
         let err = stitch_inputs(&conn, "p1", &states, Path::new("/data")).unwrap_err();
-        assert_eq!(err, "there is nothing to export: every page in this range is empty");
+        assert_eq!(err, "there is nothing to export: every chosen page is empty");
     }
 }

@@ -10,11 +10,9 @@ import {
   type ProjectDetail,
 } from "@/lib/api";
 import {
-  clampPage,
   defaultFileName,
   exportDefaults,
-  rangeIsValid,
-  rangeOf,
+  pagesOf,
   withMp3Extension,
   type ExportForm,
 } from "@/lib/export-form";
@@ -94,16 +92,18 @@ export function ExportDialog({
     };
   }, [projectId]);
 
-  const range = project && form ? rangeOf(form, project.pageCount) : null;
-  const valid = !!project && !!range && rangeIsValid(range.first, range.last, project.pageCount);
+  const pages = project && form ? pagesOf(form, project.pageCount) : null;
+  const valid = !!pages;
+  // A stable dependency for the plan effect; the array is rebuilt every render.
+  const pagesKey = pages?.join(",") ?? "";
 
   useEffect(() => {
-    if (!project || !form || !range || !valid) {
+    if (!project || !form || !pages) {
       setPlan(null);
       return;
     }
     let cancelled = false;
-    exportPlan(project.id, form.voice, form.rate, range.first, range.last).then(
+    exportPlan(project.id, form.voice, form.rate, pages).then(
       (p) => {
         if (cancelled) return;
         setPlan(p);
@@ -115,8 +115,8 @@ export function ExportDialog({
     return () => {
       cancelled = true;
     };
-    // `range` is derived; its fields are the real dependencies.
-  }, [project?.id, form?.voice, form?.rate, range?.first, range?.last, valid]);
+    // `pages` is derived; `pagesKey` is its real dependency.
+  }, [project?.id, form?.voice, form?.rate, pagesKey]);
 
   const nothing = !!plan && plan.ready + plan.toSynthesize === 0;
   const blockedOnModel = !!plan && plan.toSynthesize > 0 && engineUp === false;
@@ -125,7 +125,7 @@ export function ExportDialog({
   const update = (patch: Partial<ExportForm>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
   async function pickAndStart() {
-    if (!project || !form || !range || !canStart) return;
+    if (!project || !form || !pages || !canStart) return;
     const picked = await save({
       defaultPath: form.path ?? defaultFileName(project.title),
       filters: [{ name: "MP3", extensions: ["mp3"] }],
@@ -138,8 +138,7 @@ export function ExportDialog({
         project.id,
         form.voice,
         form.rate,
-        range.first,
-        range.last,
+        pages,
         withMp3Extension(picked),
       );
       onStarted();
@@ -151,13 +150,13 @@ export function ExportDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="grid-cols-1 sm:max-w-120">
+      <DialogContent className="grid-cols-1 p-6 sm:max-w-120">
         <DialogHeader>
           <DialogTitle className="font-serif">{t("export.title")}</DialogTitle>
         </DialogHeader>
 
         {project && form && (
-          <div className="flex flex-col gap-4 py-2">
+          <div className="flex flex-col gap-6 py-2">
             {voices.length > 0 ? (
               <Field label={t("export.voice")}>
                 <Select value={form.voice} onValueChange={(voice) => update({ voice })}>
@@ -206,27 +205,11 @@ export function ExportDialog({
                   />
                   {t("export.pageRange")}
                   <Input
-                    type="number"
-                    className="w-20"
-                    min={1}
-                    max={project.pageCount}
-                    value={form.first}
+                    className="flex-1"
+                    placeholder={t("export.pagesPlaceholder")}
+                    value={form.pagesText}
                     disabled={form.wholeBook}
-                    onChange={(e) =>
-                      update({ first: clampPage(Number(e.target.value), project.pageCount) })
-                    }
-                  />
-                  {t("export.rangeTo")}
-                  <Input
-                    type="number"
-                    className="w-20"
-                    min={1}
-                    max={project.pageCount}
-                    value={form.last}
-                    disabled={form.wholeBook}
-                    onChange={(e) =>
-                      update({ last: clampPage(Number(e.target.value), project.pageCount) })
-                    }
+                    onChange={(e) => update({ pagesText: e.target.value })}
                   />
                 </label>
               </div>
@@ -263,7 +246,7 @@ export function ExportDialog({
           </div>
         )}
 
-        <DialogFooter className="border-t-0">
+        <DialogFooter className="-mx-6 -mb-6 border-t-0 p-6 pt-4">
           <Button variant="outline" onClick={onCancel} disabled={busy}>
             {t("export.cancel")}
           </Button>

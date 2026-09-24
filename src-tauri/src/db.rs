@@ -66,6 +66,13 @@ ALTER TABLE projects ADD COLUMN export_last_page  INTEGER;
 ALTER TABLE projects ADD COLUMN export_path       TEXT;
 "#;
 
+/// v5 drops the remembered export page range: the Export dialog now takes a
+/// free page list and always opens on the whole book.
+const V5_MIGRATION: &str = r#"
+ALTER TABLE projects DROP COLUMN export_first_page;
+ALTER TABLE projects DROP COLUMN export_last_page;
+"#;
+
 /// Apply pending migrations. Versioned with `PRAGMA user_version` so later
 /// milestones can add steps without rewriting this.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
@@ -85,6 +92,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if version < 4 {
         conn.execute_batch(V4_MIGRATION)?;
         conn.pragma_update(None, "user_version", 4)?;
+    }
+    if version < 5 {
+        conn.execute_batch(V5_MIGRATION)?;
+        conn.pragma_update(None, "user_version", 5)?;
     }
     Ok(())
 }
@@ -124,12 +135,12 @@ mod tests {
     }
 
     #[test]
-    fn migrate_brings_a_fresh_database_to_version_4() {
+    fn migrate_brings_a_fresh_database_to_version_5() {
         let conn = open_in_memory().unwrap();
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
     }
 
     #[test]
@@ -192,7 +203,7 @@ mod tests {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
     }
 
     #[test]
@@ -218,5 +229,37 @@ mod tests {
             })
             .unwrap();
         assert_eq!((voice, path), (None, None));
+    }
+
+    #[test]
+    fn migrate_drops_the_export_range_from_an_existing_v4_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        for step in [super::V1_SCHEMA, super::V2_MIGRATION, super::V3_MIGRATION, super::V4_MIGRATION] {
+            conn.execute_batch(step).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 4).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, title, language, pdf_path, page_count, created_at, updated_at,
+                                   export_voice, export_first_page, export_last_page)
+             VALUES ('p', 't', 'en', 'x.pdf', 3, '', '', 'af_heart', 2, 3)",
+            [],
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('projects')")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(!cols.iter().any(|c| c == "export_first_page" || c == "export_last_page"));
+        // The rest of the remembered export survives.
+        let voice: String = conn
+            .query_row("SELECT export_voice FROM projects WHERE id = 'p'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(voice, "af_heart");
     }
 }
