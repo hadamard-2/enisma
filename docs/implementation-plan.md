@@ -1,6 +1,6 @@
 # Enisma — Backend Implementation Plan
 
-> Internal name: **HearBook**. User-facing name: **Enisma**. This plan covers the backend: the PDF → text-extraction → text-to-speech → export pipeline, plus persistence. When it was written the front-end ran on mock data; M1–M4 replaced that with real, on-device functionality, and what remains is export (M5) and download completion plus packaging (M6). Sections were revised on 2026-09-23 to describe what was actually built; each milestone's own design doc under `docs/superpowers/specs/` records how and why it diverged from the original plan.
+> Internal name: **HearBook**. User-facing name: **Enisma**. This plan covers the backend: the PDF → text-extraction → text-to-speech → export pipeline, plus persistence. When it was written the front-end ran on mock data; M1–M6 replaced that with real, on-device functionality end to end, including export and download/packaging. Sections were revised on 2026-09-25 to describe what was actually built; each milestone's own design doc under `docs/superpowers/specs/` records how and why it diverged from the original plan.
 
 ## Goals & non-negotiables
 
@@ -223,7 +223,7 @@ An export meets every page in the book, not only the one the user is looking at,
 
 ### 7. Model download, management & packaging
 
-> Revised 2026-09-23. M4 built most of the download handler this section originally specified, and M3's move to pdf.js removed most of the models it listed. What follows separates what exists from what M6 still owns.
+> Revised 2026-09-25. M4 built most of the download handler this section originally specified, and M3's move to pdf.js removed most of the models it listed. M6 closed out the rest; see the [M6 design doc](./superpowers/specs/2026-09-25-m6-download-packaging-design.md) for how.
 
 **What gets downloaded — TTS models only.** Since M3, extraction runs on pdf.js, so there are no docling artifacts or EasyOCR models. English phonemization is espeak-ng through `espeakng-loader`, which is compiled into the sidecar binary, so misaki is not used. uroman's tables are also in the binary. The manifest (`sidecar/models.json`) covers:
 
@@ -251,16 +251,20 @@ An export meets every page in the book, not only the one the user is looking at,
 - Rust hands the sidecar `HEARBOOK_MODELS_DIR`, so models survive the onefile's temp extraction.
 - A guard turns espeak-ng's 159-character data-path limit into a readable error instead of a silent exit.
 
-**Still open for M6:**
+**Built in M6:**
 
-- **`tauri build` does not build the sidecar.** `beforeBuildCommand` is only `bun run build`, and `src-tauri/binaries/` is gitignored, so a release bundles whatever binary happens to be sitting there. In the main checkout on 2026-09-23 that was a 21 MB binary dated 16 June. That predates the TTS engines — the TTS build is about 160 MB — so a release built today would ship a sidecar that cannot speak.
-- **Only `x86_64-unknown-linux-gnu` has ever been built.** The spec's native-library collection was written and verified on Linux, so Windows and macOS are untried. Windows is also where the espeak path limit is most likely to fire, because the onefile unpacks under the user's profile.
-- **The build environment needs a Rust toolchain** while `num2words2` is pinned to git (see Risks).
-- **Startup cost is unmeasured.** The onefile unpacks about 160 MB to a temp directory on every launch. `/models/status` also hashes every installed file on every call (about 670 MB with all four languages installed); its docstring says a full verify takes well under a second, which has not been re-measured on slower disks.
-- **Retry with backoff** was deliberately left out in M4: a stopped download resumes when the user asks again. Whether M6 automates that is a decision still to make.
-- **Surviving a restart mid-download** works in the sense that the `.part` survives and the next request resumes it. Nothing resumes on its own.
-- **Removing an installed language** to reclaim disk space is not possible — there is no command for it.
-- **Gating project creation on models is obsolete.** It was specified when import needed docling. Since M3, import and editing need no model at all; only Convert does, and M4 put the offer there.
+- **Commit-pinned URLs.** Every model URL in `sidecar/models.json` points at a commit revision instead of `resolve/main`, so an upstream re-upload can no longer silently swap what a checksum-verified download installs.
+- **Retry on a dropped connection.** A download that loses its connection after bytes have arrived retries three times (2 s, 8 s, 30 s), resetting the backoff on any further progress. A stopped download still only resumes when the user asks again; nothing resumes on its own at launch (deliberately, see below).
+- **Removing an installed language.** Settings → Voices can download, install from a folder, cancel, and now delete each language's model (`DELETE /models/{language}`, refused while that language is installing, converting or exporting).
+- **The stale-sidecar stamp.** `bun run tauri build` now refuses to bundle a sidecar whose stamp (`scripts/sidecar-stamp.ts`) doesn't match the current sources, closing the gap that on 2026-09-23 let a stale 21 MB binary (predating the TTS engines) sit in `src-tauri/binaries/` and would have shipped in a release. That binary has since been replaced by a current ~160 MB build; the guard exists so this can't recur silently.
+- **CI and release workflows for three targets.** `.github/workflows/ci.yml` runs the test suites on every push; `.github/workflows/release.yml` builds, freezes its own sidecar, smoke-tests it, and bundles Linux x64, Windows x64 and macOS arm64 on a `v*` tag push or manual dispatch — unsigned, as a draft GitHub Release.
+- **The smoke test.** `scripts/smoke_sidecar.py` starts the frozen binary end to end (health check, a real synthesis) and is run per-target in the release workflow before bundling.
+- **Startup measured.** On Linux x64: frozen sidecar startup 2.0 s; `/models/status` with one language (Amharic) installed 0.20 s. Windows x64 and macOS arm64 are not yet measured — they await the release workflow's first green run on GitHub.
+
+**Still deliberately not done:**
+
+- **Surviving a restart mid-download.** The `.part` file survives a crash or restart and resumes from where it left off, but only when the user asks for that language again — nothing watches for an interrupted download and restarts it on its own.
+- **Resuming on launch.** Enisma does not automatically resume an interrupted download when the app starts; this was scoped out of M6 as a non-goal (see the M6 design doc).
 
 ## Frontend wiring
 
@@ -280,7 +284,7 @@ All of the original hook points are wired:
 - [x] **M3 — Extraction.** *Narrowed:* pdf.js text-layer extraction at import for all four languages, with paragraph reflow and header/footer removal; no docling and no OCR. See §2.
 - [x] **M4 — TTS preview.** Kokoro (en) + MMS (am/ti/om) as polled jobs; per-page conversion with progress, cancel and freshness tracking; real English voice list; Web Audio playback; the download slice of M6 (resumable, verified, install from folder); a frozen sidecar.
 - [x] **M5 — Export.** Per-export voice, rate and page range; synthesize missing or stale pages, reuse fresh ones; stitch and encode to MP3; progress and cancel across a multi-hour run. Per-page caching already exists from M4. See §6 and the [M5 design doc](./superpowers/specs/2026-09-23-m5-export-design.md).
-- [ ] **M6 — Download completion + packaging.** Most of the download handler shipped in M4. What remains: revision-pinned URLs, removing a language, deciding on auto-retry and auto-resume, making `tauri build` build the sidecar, Windows and macOS builds, and measuring startup. See §7.
+- [x] **M6 — Download completion + packaging.** Revision-pinned URLs; retry with backoff on a dropped connection; removing a language from Settings; a stale-sidecar build guard; CI and release workflows building Linux, Windows and macOS; a frozen-binary smoke test; startup measured on Linux (Windows/macOS await their first green release run). See §7 and the [M6 design doc](./superpowers/specs/2026-09-25-m6-download-packaging-design.md).
 
 ## Risks & things to verify at implementation time
 

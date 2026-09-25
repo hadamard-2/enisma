@@ -1,6 +1,14 @@
 # M6 — Download completion + packaging
 
-> **Status:** designed, not yet implemented. **Date:** 2026-09-25. Covers milestone M6 from [docs/implementation-plan.md](../../implementation-plan.md), and settles the items its §7 lists as "Still open for M6". It builds on the download handler from [the M4 design](./2026-09-20-m4-tts-design.md) and the conversion slot shared with export from [the M5 design](./2026-09-23-m5-export-design.md). Internal name **HearBook**; user-facing name **Enisma**.
+> **Status:** implemented. **Date:** 2026-09-25. Covers milestone M6 from [docs/implementation-plan.md](../../implementation-plan.md), and settles the items its §7 lists as "Still open for M6". It builds on the download handler from [the M4 design](./2026-09-20-m4-tts-design.md) and the conversion slot shared with export from [the M5 design](./2026-09-23-m5-export-design.md). Internal name **HearBook**; user-facing name **Enisma**.
+
+## Deviations from this design, found during implementation
+
+- **The "to verify" item about the export voice after deleting English was resolved during planning, not during implementation.** `reconcileVoice` already keeps the project's stored voice when `listVoices` comes back empty, so no code change was needed — the risk this section flagged did not materialize.
+- **Provider method names differ from this design's sketch.** `ModelsProvider` exposes `installModel`, `installFromFolder`, `cancelInstall`, `removeLanguage` and `refresh`, not the install/cancel/remove/refresh names this document originally used.
+- **`ModelPanel` gained a `busy` prop** that disables it while another language is mid-install, to prevent overlapping installs from the same panel.
+- **The Settings row's enable/disable logic was factored into pure helpers**, `canImportFromFolder` and `installLocked`, rather than being inlined in the component.
+- **The sidecar README's `/health` description now says "currently registered"** rather than the earlier wording, to be precise that registration can fail per-language without failing the whole health check.
 
 ## What changed since the implementation plan
 
@@ -258,4 +266,12 @@ Each part lands as its own reviewable set of commits.
 
 ## Results
 
-To be filled in during implementation: startup time and `/models/status` time per OS.
+Startup is the time from spawning the frozen sidecar binary to its ready line; `/models/status` is measured with one language (Amharic) installed.
+
+| OS | Startup | `/models/status` |
+| --- | --- | --- |
+| Linux x64 | 2.0 s | 0.20 s |
+| Windows x64 | not yet measured — awaiting the first green Release run | not yet measured — awaiting the first green Release run |
+| macOS arm64 | not yet measured — awaiting the first green Release run | not yet measured — awaiting the first green Release run |
+
+The Linux numbers are from the smoke run in Task 7 (`scripts/smoke_sidecar.py` against the frozen binary, `SMOKE PASSED`). The release workflow (`.github/workflows/release.yml`) has not yet run on GitHub, so Windows and macOS timings aren't available; the maintainer can fill these in from the first green run's job output.

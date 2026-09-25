@@ -72,6 +72,24 @@ Then produce a production desktop binary:
 bun run tauri build
 ```
 
+## First launch on Windows and macOS
+
+Release builds are unsigned (see [Releasing](#releasing)), so the first launch needs one extra click.
+
+- **Windows:** the installer is unsigned, so SmartScreen shows "Windows protected your PC". Choose **More info → Run anyway** once.
+- **macOS:** the app is ad-hoc signed, not notarized. After the first blocked launch, open **System Settings → Privacy & Security** and choose **Open Anyway**.
+
+## Releasing
+
+1. Bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`.
+2. Commit, then push a `v<version>` tag.
+3. Wait for the Release workflow (`.github/workflows/release.yml`) to build and smoke-test Linux, Windows and macOS.
+4. Review and publish the resulting draft Release.
+
+A manual run from Actions (workflow dispatch, no tag) builds the same three bundles as downloadable run artifacts without creating a Release — useful for checking a change before tagging.
+
+`bun run tauri build` refuses to bundle a sidecar built from different sources than what's on disk; if it does, run `scripts/build-sidecar.sh` to rebuild it.
+
 ## Project structure
 
 ```
@@ -95,5 +113,5 @@ Every item below is built to run on-device, in keeping with the fully-offline go
 - [x] Text-to-speech, page by page (on-device)
 - [x] Voice model download, resumable and verified, or install from a folder
 - [x] Audiobook export
-- [ ] Release packaging (sidecar built by the release build; Windows and macOS)
+- [x] Release packaging (CI-built sidecar, Linux/Windows/macOS release workflow; Windows and macOS legs await their first green run)
 - [x] Persistent project storage
