@@ -199,3 +199,28 @@ Every non-English `message` below was written by Claude, not a native speaker, a
 | `export.quitBody` | Quit anyway? Finished pages are kept, and exporting again continues from there. | ቢሆንም ይውጡ? የተጠናቀቁ ገጾች ይቀመጣሉ፣ እንደገና ሲያወጡ ከዚያ ይቀጥላል። | ብዝኾነ ክትወጽእ? ዝተዛዘማ ገጻት ይዕቀባ፣ ደጊምካ ምስ ኣውጻእካ ካብኡ ይቕጽል። | Ta'us baatta? Fuulonni xumuraman ni olkaa'amu, irra deebitee yoo baaste achii itti fufa. |
 | `export.keepExporting` | Keep exporting | ማውጣቱን ቀጥል | ምውጻእ ቀጽል | Baasuu itti fufi |
 | `export.quitAnyway` | Quit | ውጣ | ውጻእ | Bahi |
+
+## M6 voice management strings (2026-09-25)
+
+The Settings → Voices list and the delete-voice confirmation. Every non-English `message` below was written by Claude and needs a native read. Terms were reused from each catalogue's existing `modelPanel` (install/download) and `deleteProject` (delete/cancel) entries so they match.
+
+**Priority:**
+
+- **`deleteVoice.body`, all three** — the English separates "audio you've already made" (kept) from "making new audio" (needs the model). Check that each translation keeps that distinction clear, since it is the whole point of the dialog. In Oromo, `{language}n` attaches an instrumental suffix to the placeholder; with names like "Afaan Oromoo" this may read oddly.
+- **"Installed" in Amharic (`ተጭኗል`) and "could not be loaded" (`ሊጫን አልቻለም`) use the same verb** — `modelPanel.unloadable` already does this, so it is consistent, but `voiceUnloadable` ("installed, but could not be loaded") may read as a contradiction. The same applies to Tigrigna `ተጻዒኑ … ክጽዕን ኣይከኣለን`.
+- **`settings.voices` plural** — `ድምጾች`, `ድምጽታት` and `Sagaleewwan` are plausible plurals of the existing "voice" terms but have not appeared elsewhere in the catalogues.
+
+| Key | English | Amharic | Tigrigna | Oromo |
+|---|---|---|---|---|
+| `settings.voices` | Voices | ድምጾች | ድምጽታት | Sagaleewwan |
+| `settings.voicesUnavailable` | Voices can't be listed until the app has finished starting. | መተግበሪያው መጀመሩን እስኪጨርስ ድረስ ድምጾች ሊዘረዘሩ አይችሉም። | እቲ መተግበሪ ምጅማሩ ክሳብ ዝውድእ ድምጽታት ክዝርዘሩ ኣይክእሉን። | Hanga appiin jalqabuu xumurutti sagaleewwan tarreeffamuu hin danda'an. |
+| `settings.voiceInstalled` | Installed · {size} | ተጭኗል · {size} | ተጻዒኑ · {size} | Ijaarameera · {size} |
+| `settings.voiceMissing` | Not installed · {size} download | አልተጫነም · {size} ማውረድ | ኣይተጻዕነን · {size} ምውራድ | Hin ijaaramne · buufannaa {size} |
+| `settings.voicePartial` | {already} of {total} downloaded | ከ{total} ውስጥ {already} ወርዷል | ካብ {total} {already} ወሪዱ | {total} keessaa {already} buufameera |
+| `settings.voiceUnloadable` | Installed, but could not be loaded | ተጭኗል፣ ነገር ግን ሊጫን አልቻለም | ተጻዒኑ፣ ግን ክጽዕን ኣይከኣለን | Ijaarameera, garuu fe'amuu hin dandeenye |
+| `settings.voiceInstalling` | Installing… {percent}% | በመጫን ላይ… {percent}% | ብምጽዓን… {percent}% | Ijaaraa jira… {percent}% |
+| `settings.voiceDelete` | Delete | ሰርዝ | ደምስስ | Haqi |
+| `deleteVoice.title` | Delete voice? | ድምጹ ይሰረዝ? | ድምጺ ይደምሰስ? | Sagaleen haqamuu? |
+| `deleteVoice.body` | Delete the {language} voice ({size})? Audio you've already made keeps playing; making new audio in {language} will need it again. | የ{language} ድምጽ ({size}) ይሰረዝ? አስቀድመው የሠሩት ድምጽ መጫወቱን ይቀጥላል፤ በ{language} አዲስ ድምጽ መሥራት ግን እንደገና ይፈልገዋል። | ናይ {language} ድምጺ ({size}) ይደምሰስ? ድሮ ዝሰራሕካዮ ድምጺ ምጽዋቱ ይቕጽል፤ ብ{language} ሓድሽ ድምጺ ምስራሕ ግን ደጊሙ የድልዮ። | Sagalee {language} ({size}) haquu? Sagaleen ati duraan hojjette taphachuu itti fufa; sagalee haaraa {language}n hojjechuun garuu irra deebi'ee isa barbaada. |
+| `deleteVoice.cancel` | Cancel | ተወው | ገዲፍካ ውጻእ | Dhiisi |
+| `deleteVoice.confirm` | Delete | ሰርዝ | ደምስስ | Haqi |

@@ -1,4 +1,7 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useModels } from "@/components/models/models-provider";
+import { VoicesSection } from "./voices-section";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
 import { APP_LANGUAGES, appLanguageLabelKey, useAppLanguage } from "@/lib/app-language";
 import { useTheme, type ThemePreference } from "@/lib/theme";
@@ -33,6 +36,11 @@ export function SettingsDialog({
   const { t } = useTranslation();
   const { preference, setPreference } = useTheme();
   const [language, setLanguage] = useAppLanguage();
+  const { refresh } = useModels();
+
+  useEffect(() => {
+    if (open) refresh();
+  }, [open, refresh]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -101,6 +109,10 @@ export function SettingsDialog({
                 ))}
               </SelectContent>
             </Select>
+          </Section>
+
+          <Section title={t("settings.voices")}>
+            <VoicesSection />
           </Section>
         </div>
       </DialogContent>

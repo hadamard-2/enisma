@@ -147,3 +147,20 @@ export function canDelete(row: ModelStatus | null, state: ModelPanelState): bool
   if (row === null || state === "installing") return false;
   return row.installedBytes + row.partialBytes > 0;
 }
+
+/**
+ * Whether a language's row offers "Install from folder". Hidden once ready
+ * (nothing to install) and while installing; everywhere else it doubles as
+ * the offline Download, Resume, Retry or Reinstall.
+ */
+export function canImportFromFolder(state: ModelPanelState): boolean {
+  return state !== "ready" && state !== "installing";
+}
+
+/**
+ * Whether every language's install buttons are disabled. One install at a
+ * time, app-wide: the backend has a single slot for it.
+ */
+export function installLocked(install: { language: string } | null): boolean {
+  return install !== null;
+}

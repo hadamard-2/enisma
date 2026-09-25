@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   canDelete,
+  canImportFromFolder,
   formatBytes,
+  installLocked,
   installedFraction,
   languageState,
   modelStateFor,
@@ -159,5 +161,28 @@ describe("canDelete", () => {
 
   it("never deletes out from under an install", () => {
     expect(canDelete(row({ partialBytes: 10 }), "installing")).toBe(false);
+  });
+});
+
+describe("canImportFromFolder", () => {
+  it("offers a folder install wherever there is something to install", () => {
+    for (const s of ["missing", "partial", "error", "unloadable"] as const) {
+      expect(canImportFromFolder(s)).toBe(true);
+    }
+  });
+
+  it("hides it once ready, and while an install is running", () => {
+    expect(canImportFromFolder("ready")).toBe(false);
+    expect(canImportFromFolder("installing")).toBe(false);
+  });
+});
+
+describe("installLocked", () => {
+  it("locks every language's install buttons while any install runs", () => {
+    expect(installLocked({ language: "am" })).toBe(true);
+  });
+
+  it("leaves them free when nothing is installing", () => {
+    expect(installLocked(null)).toBe(false);
   });
 });

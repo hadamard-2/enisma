@@ -223,6 +223,38 @@
     "notTranslated": {
       "message": " · ገና ኣይተተርጐመን",
       "context": "Appended after a language name in the dropdown when that language has no translation yet. Keep the leading space and the middle dot."
+    },
+    "voices": {
+      "message": "ድምጽታት",
+      "context": "Small uppercase section heading above the list of voice models, one per textbook language."
+    },
+    "voicesUnavailable": {
+      "message": "እቲ መተግበሪ ምጅማሩ ክሳብ ዝውድእ ድምጽታት ክዝርዘሩ ኣይክእሉን።",
+      "context": "Shown in place of the voice list while the background engine is starting or restarting."
+    },
+    "voiceInstalled": {
+      "message": "ተጻዒኑ · {size}",
+      "context": "Status line under a language name when its voice is installed. {size} is a size such as '114 MB'."
+    },
+    "voiceMissing": {
+      "message": "ኣይተጻዕነን · {size} ምውራድ",
+      "context": "Status line when a language's voice is not installed. {size} is the download size such as '114 MB'."
+    },
+    "voicePartial": {
+      "message": "ካብ {total} {already} ወሪዱ",
+      "context": "Status line when an earlier download stopped part-way. {already} and {total} are sizes such as '40 MB'."
+    },
+    "voiceUnloadable": {
+      "message": "ተጻዒኑ፣ ግን ክጽዕን ኣይከኣለን",
+      "context": "Status line when the voice files are present but the engine failed to load them."
+    },
+    "voiceInstalling": {
+      "message": "ብምጽዓን… {percent}%",
+      "context": "Status line while a voice downloads or is copied in. {percent} is a whole number 0-100."
+    },
+    "voiceDelete": {
+      "message": "ደምስስ",
+      "context": "Button that deletes an installed or partly downloaded voice, to free disk space."
     }
   },
   "menu": {
@@ -897,6 +929,24 @@
     "confirm": {
       "message": "ደምስስ",
       "context": "Button. Permanently deletes the project. Destructive — this is the point of no return."
+    }
+  },
+  "deleteVoice": {
+    "title": {
+      "message": "ድምጺ ይደምሰስ?",
+      "context": "Title of the dialog confirming that a language's voice model will be deleted."
+    },
+    "body": {
+      "message": "ናይ {language} ድምጺ ({size}) ይደምሰስ? ድሮ ዝሰራሕካዮ ድምጺ ምጽዋቱ ይቕጽል፤ ብ{language} ሓድሽ ድምጺ ምስራሕ ግን ደጊሙ የድልዮ።",
+      "context": "Dialog body. {language} is a language name, {size} a size such as '114 MB'. 'Making new audio' means converting pages or exporting."
+    },
+    "cancel": {
+      "message": "ገዲፍካ ውጻእ",
+      "context": "Closes the dialog without deleting."
+    },
+    "confirm": {
+      "message": "ደምስስ",
+      "context": "Deletes the voice model."
     }
   },
   "voices": {
