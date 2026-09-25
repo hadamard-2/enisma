@@ -3,13 +3,13 @@
   "languages": {
     "en": [
       {
-        "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx",
+        "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/onnx/model.onnx",
         "path": "en/model.onnx",
         "size": 325532232,
         "sha256": "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb"
       },
       {
-        "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer.json",
+        "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/tokenizer.json",
         "path": "en/tokenizer.json",
         "size": 3497,
         "sha256": "77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34"
@@ -17,13 +17,13 @@
     ],
     "am": [
       {
-        "url": "https://huggingface.co/hadamard-2/mms-tts-amh-onnx/resolve/main/model.onnx",
+        "url": "https://huggingface.co/hadamard-2/mms-tts-amh-onnx/resolve/99a12b073f21bcf3872d16ef597bd8bb2ecf5e20/model.onnx",
         "path": "am/model.onnx",
         "size": 114029714,
         "sha256": "ff00164b59d45167c025f1e76085b173a6e55a2da365f65bdfce0a86e4bd1aaf"
       },
       {
-        "url": "https://huggingface.co/hadamard-2/mms-tts-amh-onnx/resolve/main/tokens.txt",
+        "url": "https://huggingface.co/hadamard-2/mms-tts-amh-onnx/resolve/99a12b073f21bcf3872d16ef597bd8bb2ecf5e20/tokens.txt",
         "path": "am/tokens.txt",
         "size": 246,
         "sha256": "bda8a05dfcdd287ae4c9f7fea9a9dac1eb205757f781d3eb3a6a602cd5d8af1c"
@@ -31,13 +31,13 @@
     ],
     "ti": [
       {
-        "url": "https://huggingface.co/hadamard-2/mms-tts-tir-onnx/resolve/main/model.onnx",
+        "url": "https://huggingface.co/hadamard-2/mms-tts-tir-onnx/resolve/05ec7f935b921e4d5d2e755b6c9371aac0232cf9/model.onnx",
         "path": "ti/model.onnx",
         "size": 114028946,
         "sha256": "5cc898f59907df3d9218965f3d9ed3fc49e4db330242f142409bcf1dcd314511"
       },
       {
-        "url": "https://huggingface.co/hadamard-2/mms-tts-tir-onnx/resolve/main/tokens.txt",
+        "url": "https://huggingface.co/hadamard-2/mms-tts-tir-onnx/resolve/05ec7f935b921e4d5d2e755b6c9371aac0232cf9/tokens.txt",
         "path": "ti/tokens.txt",
         "size": 242,
         "sha256": "900460a951e3a20ea51cd0f89f227b199b6616a8a5e666f7a075eedeff5eb58f"
@@ -45,13 +45,13 @@
     ],
     "om": [
       {
-        "url": "https://huggingface.co/hadamard-2/mms-tts-orm-onnx/resolve/main/model.onnx",
+        "url": "https://huggingface.co/hadamard-2/mms-tts-orm-onnx/resolve/ee7c5cabf11900e7ea784a2d942f2392dbdb158d/model.onnx",
         "path": "om/model.onnx",
         "size": 114030482,
         "sha256": "3bc31054ea5c551ce45ce825df9c570641ceff7465fc83f9fd3d67644d818ce0"
       },
       {
-        "url": "https://huggingface.co/hadamard-2/mms-tts-orm-onnx/resolve/main/tokens.txt",
+        "url": "https://huggingface.co/hadamard-2/mms-tts-orm-onnx/resolve/ee7c5cabf11900e7ea784a2d942f2392dbdb158d/tokens.txt",
         "path": "om/tokens.txt",
         "size": 252,
         "sha256": "46e28b6027703c5c408615085599063f334236984519c299ea387716e458a4e1"
@@ -59,7 +59,7 @@
     ]
   },
   "voices": {
-    "url_template": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/{name}.bin",
+    "url_template": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/{name}.bin",
     "path_template": "en/voices/{name}.bin",
     "size": 522240,
     "names": ["af_heart", "af_bella", "af_nicole", "am_michael", "am_adam", "bf_emma", "bm_george"],

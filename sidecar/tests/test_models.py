@@ -13,6 +13,7 @@ the one behaviour under test would never fire.
 
 import hashlib
 import http.server
+import re
 import threading
 import urllib.error
 
@@ -48,6 +49,19 @@ def test_the_manifest_ships_only_fp32_kokoro_weights():
 def test_english_carries_the_kokoro_voices():
     paths = [e["path"] for e in models.files_for("en")]
     assert "en/voices/af_heart.bin" in paths
+
+
+_PINNED = re.compile(r"^https://huggingface\.co/[^/]+/[^/]+/resolve/[0-9a-f]{40}/")
+
+
+def test_every_download_url_is_pinned_to_a_commit():
+    # `resolve/main` is a moving branch: an upstream re-upload would not
+    # install a wrong model (the hash stops that) but would make every new
+    # download fail its checksum. A commit revision cannot move.
+    m = models.manifest()
+    urls = [e["url"] for entries in m["languages"].values() for e in entries]
+    urls.append(m["voices"]["url_template"])
+    assert [u for u in urls if not _PINNED.match(u)] == []
 
 
 def test_verify_accepts_a_matching_file(tmp_path):
