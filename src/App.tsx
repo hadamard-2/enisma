@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/lib/theme";
 import { AppCommandsProvider } from "@/lib/app-commands";
 import { TitleBar } from "@/components/chrome/title-bar";
 import { ExportProvider } from "@/components/export/export-provider";
+import { ModelsProvider } from "@/components/models/models-provider";
 import "./App.css";
 
 function App() {
@@ -12,14 +13,16 @@ function App() {
     <ThemeProvider>
       <HashRouter>
         <AppCommandsProvider>
-          <ExportProvider>
-            <TitleBar />
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/project/:id" element={<EditorRoute />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </ExportProvider>
+          <ModelsProvider>
+            <ExportProvider>
+              <TitleBar />
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/project/:id" element={<EditorRoute />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </ExportProvider>
+          </ModelsProvider>
         </AppCommandsProvider>
       </HashRouter>
     </ThemeProvider>

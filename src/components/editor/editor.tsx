@@ -16,7 +16,6 @@ import {
 } from "react-resizable-panels";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   cancelConversion,
   convertPage,
@@ -26,11 +25,6 @@ import {
   listVoices,
   savePageSourceText,
   savePageText,
-  acquireModel,
-  cancelModelAcquisition,
-  modelStatus,
-  MODEL_INSTALL_CANCELLED,
-  type ModelStatus,
   setLastPage,
   setPageDone,
   updateProject,
@@ -40,12 +34,13 @@ import {
   type ProjectDetail,
 } from "@/lib/api";
 import { cancelAbandonedConversion } from "@/lib/audio-state";
-import { modelStateFor } from "@/lib/model-state";
+import { languageState } from "@/lib/model-state";
+import { useModels } from "@/components/models/models-provider";
 import { extractFromUrl } from "@/lib/extract-open";
 import { cn } from "@/lib/utils";
 import { reconcileVoice } from "@/lib/voice-selection";
 import { resumePage } from "@/lib/resume-page";
-import { formatShortcut, MOD, SHIFT_KEY, sidecarHealth } from "@/lib/platform";
+import { formatShortcut, MOD, SHIFT_KEY } from "@/lib/platform";
 import { GOTO_PAGE_EVENT, useRegisterCommands, type GotoPageDetail } from "@/lib/app-commands";
 import { useExport } from "@/components/export/export-provider";
 import {
@@ -194,6 +189,7 @@ function Editor({
     setLastPage(project.id, activePage).catch(console.error);
   }, [project.id, activePage]);
   const [title, setTitle] = useState(project.title);
+  const models = useModels();
   const [language, setLanguage] = useState<string>(project.language);
   const [voices, setVoices] = useState<string[]>([]);
   // `projects.voice`/`projects.rate` are the panel's remembered position, so a
@@ -208,12 +204,6 @@ function Editor({
     voiceRef.current = voice;
   }, [voice]);
   const [speed, setSpeed] = useState(project.rate);
-
-  // Bumped when a voice model is installed. English offers seven voices, but
-  // only once its files are on disk — without this the list stays empty for
-  // the rest of the session after a download, leaving the user with a model
-  // they just fetched and no voice to convert with.
-  const [modelsVersion, setModelsVersion] = useState(0);
 
   // The voice list belongs to the language, so it is re-fetched on every
   // switch. An empty list is a normal state, not a failure: the single-speaker
@@ -255,7 +245,11 @@ function Editor({
       cancelled = true;
       if (retry !== null) window.clearTimeout(retry);
     };
-  }, [language, project.id, modelsVersion]);
+  // `models.version` is bumped when a voice model is installed. English offers
+  // seven voices, but only once its files are on disk — without this the list
+  // stays empty for the rest of the session after a download, leaving the user
+  // with a model they just fetched and no voice to convert with.
+  }, [language, project.id, models.version]);
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");
   const [text, setText] = useState("");
@@ -725,122 +719,26 @@ function Editor({
   // Acquisition is just-in-time: nothing is fetched at first launch, and the
   // prompt appears here, where the user has just asked to hear a page and the
   // missing model is the reason they cannot.
-  const [modelRows, setModelRows] = useState<ModelStatus[] | null>(null);
-  // Which languages the sidecar actually has an engine for. Null while that is
-  // unknown — the sidecar rejects with "sidecar starting" during a restart, and
-  // treating that as "no engines" would flash a load-failure warning over a
-  // model that is perfectly fine.
-  const [engines, setEngines] = useState<Record<string, unknown> | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [installCancelling, setInstallCancelling] = useState(false);
-  const [installProgress, setInstallProgress] = useState(0);
-  /** The backend's own words when an install failed; untranslated. */
-  const [installError, setInstallError] = useState<string | null>(null);
-  // The language a running install belongs to. Cancel names a language, and
-  // Rust refuses to stop a job the named language does not own.
-  const installingLanguageRef = useRef<string | null>(null);
-
-  const refreshModels = useCallback(() => {
-    // Two questions with two answers: what is on disk, and what actually
-    // loaded. A model can verify and still fail to load, so neither alone is
-    // enough to decide what the panel should offer.
-    modelStatus().then(setModelRows, (e: unknown) => {
-      console.error(e);
-      setModelRows(null);
-    });
-    sidecarHealth().then(
-      (h) => setEngines(h.engines ?? {}),
-      () => setEngines(null),
-    );
-  }, []);
-
   useEffect(() => {
-    refreshModels();
-  }, [refreshModels, language]);
-
-  useEffect(() => {
-    const unlisten = listen<{ language: string; progress: number }>(
-      "models://progress",
-      (e) => {
-        if (e.payload.language !== installingLanguageRef.current) return;
-        setInstallProgress(e.payload.progress);
-      },
-    );
-    return () => {
-      void unlisten.then((f) => f());
-    };
-  }, []);
-
-  // An install belongs to a language, so switching language abandons the
-  // previous one's failure rather than showing it against the new one.
-  useEffect(() => {
-    setInstallError(null);
-  }, [language]);
+    models.refresh();
+  }, [language]); // eslint-disable-line react-hooks/exhaustive-deps -- refresh is stable
 
   const modelRow = useMemo(
-    () => modelRows?.find((m) => m.language === language) ?? null,
-    [modelRows, language],
+    () => models.rows?.find((m) => m.language === language) ?? null,
+    [models.rows, language],
   );
 
   // Status unknown — the sidecar is down or restarting — is not evidence that
   // a model is missing. Claiming it is would replace Convert with a Download
   // button sized in blanks, over a language that may well be installed. Let
   // Convert be offered and fail with the real reason instead. An install in
-  // flight is exempt: it outranks this for the same reason it outranks every
-  // resting state, and the panel must not vanish out from under it.
-  const modelState = modelRows === null && !installing ? "ready" : modelStateFor({
-    present: modelRow?.present ?? false,
-    partialBytes: modelRow?.partialBytes ?? 0,
-    // With health unknown, trust the files rather than accusing a working
-    // model of failing to load. A conversion would surface the truth anyway.
-    engineUp: engines === null ? (modelRow?.present ?? false) : Boolean(engines[language]),
-    installing,
-    error: installError,
-  });
-
-  async function runAcquire(sourceDir?: string) {
-    if (installing) return;
-    const lang = language;
-    setInstallError(null);
-    setInstallProgress(0);
-    setInstallCancelling(false);
-    installingLanguageRef.current = lang;
-    setInstalling(true);
-    try {
-      await acquireModel(lang, sourceDir);
-    } catch (e: unknown) {
-      const message = String(e);
-      // A cancellation is an outcome the user asked for, not a failure.
-      if (message !== MODEL_INSTALL_CANCELLED) setInstallError(message);
-    } finally {
-      installingLanguageRef.current = null;
-      setInstalling(false);
-      setInstallCancelling(false);
-      setInstallProgress(0);
-      // Whether it succeeded, failed or was cancelled, what is on disk has
-      // moved — a cancel leaves resumable bytes, and a success brings the
-      // language up without a restart.
-      refreshModels();
-      setModelsVersion((n) => n + 1);
-    }
-  }
-
-  async function pickModelFolder() {
-    const picked = await open({ directory: true, multiple: false });
-    if (typeof picked === "string") void runAcquire(picked);
-  }
-
-  function requestInstallCancel() {
-    const lang = installingLanguageRef.current;
-    if (lang === null) return;
-    // Optimistic for the same reason a conversion's cancel is: the request is
-    // what the user performed. `runAcquire`'s `finally` is what ends this.
-    setInstallCancelling(true);
-    cancelModelAcquisition(lang).catch((e: unknown) => {
-      console.error(e);
-      setInstallCancelling(false);
-    });
-  }
+  // flight is exempt: the panel must not vanish out from under it.
+  const modelState =
+    models.rows === null && models.install === null ? "ready" : languageState(models.snapshot, language);
+  const installHere = models.install?.language === language ? models.install : null;
+  // Only one install runs at a time; while another language's is going, this
+  // book's panel says so by disabling its buttons rather than ignoring clicks.
+  const installBusyElsewhere = models.install !== null && installHere === null;
 
   const counts = useMemo(
     () => ({
@@ -1162,12 +1060,13 @@ function Editor({
               model={{
                 state: modelState,
                 status: modelRow,
-                progress: installProgress,
-                error: installError,
-                cancelling: installCancelling,
-                onDownload: () => void runAcquire(),
-                onImport: () => void pickModelFolder(),
-                onCancel: requestInstallCancel,
+                progress: installHere?.progress ?? 0,
+                error: models.error?.language === language ? models.error.message : null,
+                cancelling: installHere?.cancelling ?? false,
+                busy: installBusyElsewhere,
+                onDownload: () => void models.installModel(language),
+                onImport: () => void models.installFromFolder(language),
+                onCancel: models.cancelInstall,
               }}
             />
           </ResizablePanel>

@@ -20,6 +20,7 @@ export function ModelPanel({
   progress,
   error,
   cancelling,
+  busy = false,
   onDownload,
   onImport,
   onCancel,
@@ -35,6 +36,11 @@ export function ModelPanel({
   error: string | null;
   /** A stop has been requested but the install has not settled yet. */
   cancelling: boolean;
+  /**
+   * Another language's install is running. Only one runs at a time, so the
+   * buttons are disabled rather than left to ignore a click.
+   */
+  busy?: boolean;
   onDownload: () => void;
   onImport: () => void;
   onCancel: () => void;
@@ -101,12 +107,12 @@ export function ModelPanel({
       )}
 
       <div className="mt-3 flex items-center gap-2">
-        <Button onClick={onDownload} className="flex-1">
+        <Button onClick={onDownload} className="flex-1" disabled={busy}>
           {t(`modelPanel.${primaryAction(state) ?? "download"}`)}
         </Button>
         {/* The whole point of the offline design: a machine that cannot
             download can still be given the same files on a stick. */}
-        <Button variant="outline" onClick={onImport} title={t("modelPanel.importTooltip")}>
+        <Button variant="outline" onClick={onImport} disabled={busy} title={t("modelPanel.importTooltip")}>
           <FolderInput size={14} />
           {t("modelPanel.import")}
         </Button>

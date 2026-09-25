@@ -314,6 +314,8 @@ export function SettingsPanel({
     progress: number;
     error: string | null;
     cancelling: boolean;
+    /** Another language is installing, so this one cannot start yet. */
+    busy?: boolean;
     onDownload: () => void;
     onImport: () => void;
     onCancel: () => void;
@@ -442,6 +444,7 @@ export function SettingsPanel({
               progress={model.progress}
               error={model.error}
               cancelling={model.cancelling}
+              busy={model.busy}
               onDownload={model.onDownload}
               onImport={model.onImport}
               onCancel={model.onCancel}
