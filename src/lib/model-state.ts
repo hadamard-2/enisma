@@ -1,3 +1,5 @@
+import type { ModelStatus } from "./api";
+
 /**
  * What the voice-model half of the settings panel should be showing.
  *
@@ -82,4 +84,66 @@ export function installedFraction(status: {
   if (status.bytes <= 0) return 0;
   const have = status.installedBytes + status.partialBytes;
   return Math.min(1, Math.max(0, have / status.bytes));
+}
+
+/** The one button a language's resting state offers. */
+export type PrimaryAction = "download" | "resume" | "retry" | "reinstall";
+
+/**
+ * Which button a state offers, shared by the editor's panel and Settings so
+ * the same state is never labelled two ways. None while installing, and none
+ * once the language is ready.
+ */
+export function primaryAction(state: ModelPanelState): PrimaryAction | null {
+  switch (state) {
+    case "missing":
+      return "download";
+    case "partial":
+      return "resume";
+    case "error":
+      return "retry";
+    case "unloadable":
+      return "reinstall";
+    default:
+      return null;
+  }
+}
+
+/** Everything the app knows about voice models at one moment. */
+export interface ModelsSnapshot {
+  /** From `modelStatus()`; null while the sidecar has not answered. */
+  rows: ModelStatus[] | null;
+  /** From `sidecarHealth().engines`; null while unknown. */
+  engines: Record<string, unknown> | null;
+  /** The language an install is running for, if any. */
+  installing: string | null;
+  /** The last failed install and the language it belongs to. */
+  error: { language: string; message: string } | null;
+}
+
+/**
+ * One language's state from the app-wide snapshot.
+ *
+ * With engine health unknown the files are trusted, rather than accusing a
+ * working model of failing to load; a conversion would surface the truth.
+ */
+export function languageState(s: ModelsSnapshot, language: string): ModelPanelState {
+  const row = s.rows?.find((r) => r.language === language) ?? null;
+  const present = row?.present ?? false;
+  return modelStateFor({
+    present,
+    partialBytes: row?.partialBytes ?? 0,
+    engineUp: s.engines === null ? present : Boolean(s.engines[language]),
+    installing: s.installing === language,
+    error: s.error?.language === language ? s.error.message : null,
+  });
+}
+
+/**
+ * Whether a language has anything to delete. Partial downloads count, so
+ * abandoned scratch files can be cleared too; an install in flight never.
+ */
+export function canDelete(row: ModelStatus | null, state: ModelPanelState): boolean {
+  if (row === null || state === "installing") return false;
+  return row.installedBytes + row.partialBytes > 0;
 }

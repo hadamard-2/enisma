@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, installedFraction, modelStateFor } from "./model-state";
+import {
+  canDelete,
+  formatBytes,
+  installedFraction,
+  languageState,
+  modelStateFor,
+  primaryAction,
+  type ModelsSnapshot,
+} from "./model-state";
+import type { ModelStatus } from "./api";
 
 const base = {
   present: false,
@@ -79,5 +88,76 @@ describe("installedFraction", () => {
 
   it("is zero for a language with no manifest size", () => {
     expect(installedFraction({ bytes: 0, installedBytes: 0, partialBytes: 0 })).toBe(0);
+  });
+});
+
+const row = (over: Partial<ModelStatus> = {}): ModelStatus => ({
+  language: "am",
+  present: false,
+  bytes: 114_000_000,
+  installedBytes: 0,
+  partialBytes: 0,
+  ...over,
+});
+
+const snap = (over: Partial<ModelsSnapshot> = {}): ModelsSnapshot => ({
+  rows: [row()],
+  engines: {},
+  installing: null,
+  error: null,
+  ...over,
+});
+
+describe("primaryAction", () => {
+  it("names the button each resting state offers", () => {
+    expect(primaryAction("missing")).toBe("download");
+    expect(primaryAction("partial")).toBe("resume");
+    expect(primaryAction("error")).toBe("retry");
+    expect(primaryAction("unloadable")).toBe("reinstall");
+  });
+
+  it("offers nothing while installing or once ready", () => {
+    expect(primaryAction("installing")).toBeNull();
+    expect(primaryAction("ready")).toBeNull();
+  });
+});
+
+describe("languageState", () => {
+  it("reads a language's row and engine", () => {
+    const s = snap({ rows: [row({ present: true, installedBytes: 114_000_000 })], engines: { am: true } });
+    expect(languageState(s, "am")).toBe("ready");
+  });
+
+  it("trusts the files while engine health is unknown", () => {
+    const s = snap({ rows: [row({ present: true })], engines: null });
+    expect(languageState(s, "am")).toBe("ready");
+  });
+
+  it("shows an install only for the language being installed", () => {
+    expect(languageState(snap({ installing: "am" }), "am")).toBe("installing");
+    expect(languageState(snap({ installing: "ti" }), "am")).toBe("missing");
+  });
+
+  it("shows an error only for the language it belongs to", () => {
+    const error = { language: "ti", message: "checksum" };
+    expect(languageState(snap({ error }), "am")).toBe("missing");
+    expect(languageState(snap({ rows: [row({ language: "ti" })], error }), "ti")).toBe("error");
+  });
+});
+
+describe("canDelete", () => {
+  it("allows deleting anything on disk, finished or partial", () => {
+    expect(canDelete(row({ installedBytes: 10 }), "ready")).toBe(true);
+    expect(canDelete(row({ partialBytes: 10 }), "partial")).toBe(true);
+    expect(canDelete(row({ installedBytes: 10 }), "unloadable")).toBe(true);
+  });
+
+  it("offers nothing to delete when nothing is there", () => {
+    expect(canDelete(row(), "missing")).toBe(false);
+    expect(canDelete(null, "missing")).toBe(false);
+  });
+
+  it("never deletes out from under an install", () => {
+    expect(canDelete(row({ partialBytes: 10 }), "installing")).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { CloudDownload, FolderInput, HardDriveDownload, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatBytes, installedFraction, type ModelPanelState } from "@/lib/model-state";
+import { formatBytes, installedFraction, primaryAction, type ModelPanelState } from "@/lib/model-state";
 import type { ModelStatus } from "@/lib/api";
 
 /**
@@ -102,15 +102,7 @@ export function ModelPanel({
 
       <div className="mt-3 flex items-center gap-2">
         <Button onClick={onDownload} className="flex-1">
-          {t(
-            state === "partial"
-              ? "modelPanel.resume"
-              : state === "error"
-                ? "modelPanel.retry"
-                : state === "unloadable"
-                  ? "modelPanel.reinstall"
-                  : "modelPanel.download",
-          )}
+          {t(`modelPanel.${primaryAction(state) ?? "download"}`)}
         </Button>
         {/* The whole point of the offline design: a machine that cannot
             download can still be given the same files on a stick. */}
