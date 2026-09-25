@@ -23,4 +23,9 @@ uv run pyinstaller --clean --noconfirm hearbook_sidecar.spec
 
 mkdir -p "$BIN_DIR"
 cp "$SIDECAR_DIR/dist/hearbook-sidecar$EXT" "$BIN_DIR/hearbook-sidecar-$TRIPLE$EXT"
+
+# Tie the binary to the sources it was built from, so `tauri build` can refuse
+# a stale one (see scripts/sidecar-stamp.ts).
+bun "$REPO_ROOT/scripts/sidecar-stamp.ts" write
+
 echo "Installed: $BIN_DIR/hearbook-sidecar-$TRIPLE$EXT"

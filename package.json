@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "check-sidecar": "bun scripts/sidecar-stamp.ts check",
     "test": "vitest run"
   },
   "dependencies": {
