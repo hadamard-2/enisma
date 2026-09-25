@@ -245,10 +245,11 @@ function Editor({
       cancelled = true;
       if (retry !== null) window.clearTimeout(retry);
     };
-  // `models.version` is bumped when a voice model is installed. English offers
-  // seven voices, but only once its files are on disk — without this the list
-  // stays empty for the rest of the session after a download, leaving the user
-  // with a model they just fetched and no voice to convert with.
+  // `models.version` is bumped when an install settles (success or cancel) and
+  // when a model is deleted. English offers seven voices, but only once its
+  // files are on disk — without this the list stays empty for the rest of the
+  // session after a download, leaving the user with a model they just fetched
+  // and no voice to convert with.
   }, [language, project.id, models.version]);
   const [playing, setPlaying] = useState(false);
   const [filter, setFilter] = useState<PageFilter>("all");

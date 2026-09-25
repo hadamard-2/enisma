@@ -8,7 +8,7 @@
 - **Provider method names differ from this design's sketch.** `ModelsProvider` exposes `installModel`, `installFromFolder`, `cancelInstall`, `removeLanguage` and `refresh`, not the install/cancel/remove/refresh names this document originally used.
 - **`ModelPanel` gained a `busy` prop** that disables it while another language is mid-install, to prevent overlapping installs from the same panel.
 - **The Settings row's enable/disable logic was factored into pure helpers**, `canImportFromFolder` and `installLocked`, rather than being inlined in the component.
-- **The sidecar README's `/health` description now says "currently registered"** rather than the earlier wording, to be precise that registration can fail per-language without failing the whole health check.
+- **The sidecar README's `/health` description now says "currently registered"** because deleting a language's model now takes its engine down at runtime, so the set of engines is no longer fixed at startup.
 
 ## What changed since the implementation plan
 
