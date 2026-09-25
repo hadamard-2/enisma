@@ -62,6 +62,8 @@ Every route takes the bearer token; a missing or wrong one is `401`.
 
 This runs PyInstaller against `hearbook_sidecar.spec` and copies the result to `src-tauri/binaries/hearbook-sidecar-<target-triple>` (the suffix Tauri's `externalBin` resolution requires). The result is a single ~160 MB file; the models it downloads at runtime are not in it.
 
+The frozen binary also accepts `--check-espeak`, which phonemizes one word with espeak-ng, prints it as JSON and exits, needing no model and no token. `scripts/smoke_sidecar.py` runs that check and then exercises a real install, synthesis and delete against the frozen binary.
+
 ## What the frozen binary carries
 
 The TTS stacks reach most of what they need through filesystem paths rather than through `import`, so PyInstaller's import-graph analysis does not find it. Every entry in the spec file's `binaries`/`datas` is there because something breaks without it.

@@ -398,7 +398,23 @@ def _register_engines() -> None:
         register_language(lang)
 
 
-def main() -> int:
+def _check_espeak() -> int:
+    """Phonemize one word and print it as JSON, for a build's smoke test.
+
+    JSON rather than the raw IPA: a Windows pipe is not UTF-8, and printing
+    IPA to it would fail for reasons that have nothing to do with espeak-ng.
+    """
+    import engine_kokoro
+
+    phonemes = engine_kokoro._make_phonemizer()("hello")
+    print(json.dumps(phonemes))
+    return 0 if phonemes.strip() else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if "--check-espeak" in args:
+        return _check_espeak()
     if not _token:
         _emit({"ready": False, "error": f"{TOKEN_ENV} not set"})
         return 1
