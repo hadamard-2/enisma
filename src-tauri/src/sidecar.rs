@@ -340,12 +340,28 @@ fn port_of(state: &SidecarState) -> Result<u16, String> {
         .ok_or_else(|| "sidecar starting".to_string())
 }
 
+/// The error for a non-2xx answer, with the sidecar's own reason when it gave
+/// one. FastAPI puts that reason in `detail`; without it a failure the user
+/// could act on ("file in use") reaches them as a bare status line.
+fn failure_message(
+    route: &str,
+    status: reqwest::StatusCode,
+    body: Option<&serde_json::Value>,
+) -> String {
+    match body.and_then(|b| b.get("detail")).and_then(|d| d.as_str()) {
+        Some(detail) => format!("{route} returned {status}: {detail}"),
+        None => format!("{route} returned {status}"),
+    }
+}
+
 async fn read_json(resp: reqwest::Response, route: &str) -> Result<serde_json::Value, String> {
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Err(format!("{route} {NOT_FOUND}"));
     }
     if !resp.status().is_success() {
-        return Err(format!("{route} returned {}", resp.status()));
+        let status = resp.status();
+        let body = resp.json::<serde_json::Value>().await.ok();
+        return Err(failure_message(route, status, body.as_ref()));
     }
     resp.json::<serde_json::Value>()
         .await
@@ -416,5 +432,22 @@ mod tests {
         assert!(!is_not_found("/jobs/abc returned 500 Internal Server Error"));
         assert!(!is_not_found("sidecar starting"));
         assert!(!is_not_found("error sending request for url"));
+    }
+
+    #[test]
+    fn a_failure_carries_the_sidecar_s_own_reason_when_it_gives_one() {
+        let body = serde_json::json!({ "detail": "could not delete the am voice model: in use" });
+        assert_eq!(
+            failure_message("/models/am", reqwest::StatusCode::INTERNAL_SERVER_ERROR, Some(&body)),
+            "/models/am returned 500 Internal Server Error: could not delete the am voice model: in use"
+        );
+    }
+
+    #[test]
+    fn a_failure_without_a_reason_reads_as_before() {
+        assert_eq!(
+            failure_message("/jobs/abc", reqwest::StatusCode::INTERNAL_SERVER_ERROR, None),
+            "/jobs/abc returned 500 Internal Server Error"
+        );
     }
 }

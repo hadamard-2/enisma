@@ -73,6 +73,7 @@ pub fn run() {
             models::model_status_cmd,
             models::acquire_model_cmd,
             models::cancel_model_acquisition_cmd,
+            models::remove_model_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

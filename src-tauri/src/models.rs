@@ -9,11 +9,14 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::convert::{ActiveConversion, Holder};
 use crate::sidecar::{self, SidecarState};
+use crate::Db;
 
 /// How often to ask how an acquisition is going. A download runs for minutes,
 /// so this is about a progress bar that moves, not about precision.
@@ -236,6 +239,96 @@ pub async fn cancel_model_acquisition_cmd(
     }
 }
 
+/// Why a language cannot be deleted right now.
+pub const REMOVE_WHILE_INSTALLING: &str =
+    "this voice is being installed. Cancel the install first, or wait for it to finish.";
+pub const REMOVE_WHILE_CONVERTING: &str =
+    "a page in this language is being converted. Wait for it to finish, or cancel it first.";
+pub const REMOVE_WHILE_EXPORTING: &str =
+    "an export in this language is running. Wait for it to finish, or cancel it first.";
+
+/// Whether deleting `language` must be refused, and why.
+///
+/// `installing` is the language the acquisition slot holds, if any.
+/// `converting` is who holds the conversion slot and the language of the
+/// project they hold it for. An export holds the same slot, so one rule
+/// covers both. Anything in another language is no reason to refuse.
+pub fn removal_refusal(
+    language: &str,
+    installing: Option<&str>,
+    converting: Option<(Holder, &str)>,
+) -> Option<&'static str> {
+    if installing == Some(language) {
+        return Some(REMOVE_WHILE_INSTALLING);
+    }
+    match converting {
+        Some((Holder::Page, lang)) if lang == language => Some(REMOVE_WHILE_CONVERTING),
+        Some((Holder::Export, lang)) if lang == language => Some(REMOVE_WHILE_EXPORTING),
+        _ => None,
+    }
+}
+
+/// The language of the project holding a conversion slot, if that project
+/// still exists.
+///
+/// The project named by the slot can be deleted in the gap between the slot
+/// being claimed and this lookup running, so a missing row is looked up with
+/// `.optional()` and treated as "no such project" rather than surfaced as a
+/// query error.
+fn project_language(
+    conn: &rusqlite::Connection,
+    project_id: &str,
+) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT language FROM projects WHERE id = ?1",
+        params![project_id],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+/// Delete one language's voice model, unless something is using it.
+///
+/// A conversion that starts in the moment between this check and the sidecar
+/// taking the engine down fails with the sidecar's "language unavailable"
+/// error. That window is accepted: closing it would need a new kind of slot
+/// holder, and the error it produces is clear.
+#[tauri::command]
+pub async fn remove_model_cmd(
+    sidecar_state: State<'_, SidecarState>,
+    active: State<'_, ActiveAcquisition>,
+    conversion: State<'_, ActiveConversion>,
+    db: State<'_, Db>,
+    language: String,
+) -> Result<(), String> {
+    let installing = active.0.lock().unwrap().as_ref().map(|j| j.language.clone());
+    let holder = conversion
+        .0
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|j| (j.holder, j.project_id.clone()));
+    let converting = match holder {
+        Some((h, project_id)) => {
+            let conn = db.0.lock().unwrap();
+            project_language(&conn, &project_id)
+                .map_err(|e| e.to_string())?
+                .map(|l| (h, l))
+        }
+        None => None,
+    };
+    if let Some(reason) = removal_refusal(
+        &language,
+        installing.as_deref(),
+        converting.as_ref().map(|(h, l)| (*h, l.as_str())),
+    ) {
+        return Err(reason.to_string());
+    }
+    sidecar::delete_json(&sidecar_state, &format!("/models/{language}"))
+        .await
+        .map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +353,63 @@ mod tests {
     #[test]
     fn a_cancel_with_nothing_running_matches_nothing() {
         assert!(job_for(&None, "am").is_none());
+    }
+
+    #[test]
+    fn a_language_being_installed_cannot_be_deleted() {
+        assert_eq!(
+            removal_refusal("am", Some("am"), None),
+            Some(REMOVE_WHILE_INSTALLING)
+        );
+    }
+
+    #[test]
+    fn an_install_of_another_language_does_not_stop_a_delete() {
+        assert_eq!(removal_refusal("am", Some("ti"), None), None);
+    }
+
+    #[test]
+    fn a_language_a_page_is_being_converted_in_cannot_be_deleted() {
+        assert_eq!(
+            removal_refusal("am", None, Some((Holder::Page, "am"))),
+            Some(REMOVE_WHILE_CONVERTING)
+        );
+    }
+
+    #[test]
+    fn a_language_being_exported_cannot_be_deleted() {
+        assert_eq!(
+            removal_refusal("en", None, Some((Holder::Export, "en"))),
+            Some(REMOVE_WHILE_EXPORTING)
+        );
+    }
+
+    #[test]
+    fn a_conversion_in_another_language_does_not_stop_a_delete() {
+        assert_eq!(removal_refusal("am", None, Some((Holder::Export, "en"))), None);
+    }
+
+    #[test]
+    fn with_nothing_running_a_delete_goes_ahead() {
+        assert_eq!(removal_refusal("om", None, None), None);
+    }
+
+    #[test]
+    fn a_conversion_holder_naming_a_missing_project_is_no_conflict() {
+        // The project a conversion slot names can be deleted in the gap
+        // between the slot being claimed and remove_model_cmd's lookup.
+        // `project_language` uses `.optional()`, so that lookup returns `Ok(None)`
+        // rather than a query error, and removal_refusal then sees "no
+        // conversion in this language" instead of the delete being refused
+        // over a project that no longer exists.
+        let conn = crate::db::open_in_memory().unwrap();
+        crate::db::migrate(&conn).unwrap();
+        let result = project_language(&conn, "missing-project-id").unwrap();
+        assert_eq!(result, None);
+        assert_eq!(
+            removal_refusal("am", None, result.as_ref().map(|l| (Holder::Page, l.as_str()))),
+            None
+        );
     }
 
     #[test]

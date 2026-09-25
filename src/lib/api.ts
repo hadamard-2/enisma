@@ -205,6 +205,16 @@ export const acquireModel = (language: string, sourceDir?: string) =>
 export const cancelModelAcquisition = (language: string) =>
   invoke<void>("cancel_model_acquisition_cmd", { language });
 
+/**
+ * Delete one language's voice model, scratch files included.
+ *
+ * Rejects, in English, while that language is being installed, converted or
+ * exported, and with the sidecar's own reason if the files could not be
+ * deleted. Audio already made is untouched.
+ */
+export const removeModel = (language: string) =>
+  invoke<void>("remove_model_cmd", { language });
+
 /** What the Export dialog shows before anything starts. */
 export interface ExportPlan {
   total: number;
