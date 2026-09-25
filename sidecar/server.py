@@ -173,6 +173,29 @@ def models_status(_: None = Depends(_require_token)) -> dict:
     return {"languages": models.status()}
 
 
+@app.delete("/models/{language}")
+def remove_model(language: str, _: None = Depends(_require_token)) -> dict:
+    """Delete one language's voice model and take its engine down.
+
+    The engine goes first, so no new synthesis can start on files that are
+    about to vanish. If the files will not go — on Windows, a file still open
+    cannot be deleted — the engine is rebuilt from whatever is left, so /health
+    and the disk never disagree about whether the language can speak.
+    """
+    if language not in models.manifest()["languages"]:
+        raise HTTPException(status_code=404, detail=f"no voice model for language {language!r}")
+    ENGINES_BY_LANGUAGE.pop(language, None)
+    try:
+        models.remove(language)
+    except OSError as exc:
+        register_language(language)
+        raise HTTPException(
+            status_code=500,
+            detail=f"could not delete the {language} voice model: {exc}",
+        ) from exc
+    return {"removed": language}
+
+
 class FetchRequest(BaseModel):
     language: str
 

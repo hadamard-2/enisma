@@ -40,7 +40,7 @@ Every route takes the bearer token; a missing or wrong one is `401`.
 
 | Route | Response |
 | --- | --- |
-| `GET /health` | `{"status": "ok", "version": "0", "engines": {"<lang>": true, ...}}` — `engines` holds exactly the languages whose engine registered at startup. Registration is non-fatal, so an absent or unloadable model drops its language from this map rather than stopping the sidecar. |
+| `GET /health` | `{"status": "ok", "version": "0", "engines": {"<lang>": true, ...}}` — `engines` holds exactly the languages whose engine is currently registered. Registration is non-fatal, so an absent or unloadable model drops its language from this map rather than stopping the sidecar. |
 | `POST /jobs/tts` | `{"jobId": "..."}` — returns immediately; poll `GET /jobs/{id}` for progress. |
 | `POST /jobs/fetch` | `{"jobId": "..."}` — a model download is an ordinary job, with no status or cancel route of its own. Cancelling keeps what has already arrived; starting the same language again resumes from there with a `Range` request rather than from zero. A **429** from the host is reported as a job error naming how long to wait, read from its `RateLimit` (or `Retry-After`) header, rather than retried — the window is measured in minutes, and sleeping through it inside a several-hundred-megabyte download is indistinguishable from the stall the timeout exists to prevent. |
 | `POST /jobs/import` | `{"jobId": "..."}` — installs one language from a local folder, for a machine with no usable connection. Takes `{"language", "source_dir"}`, accepts either the manifest's nesting (`am/model.onnx`) or a flat folder of the files, and verifies against the same hashes a download does. |
@@ -48,6 +48,7 @@ Every route takes the bearer token; a missing or wrong one is `401`.
 | `GET /jobs/{id}` | `{"state", "progress", "sampleRate", "durationMs", "message"}`, or **404** for an unknown or pruned job. |
 | `DELETE /jobs/{id}` | The same snapshot shape `GET` returns, and the same **404** for an unknown or pruned job — so a caller writes one not-found branch, not two. |
 | `GET /models/status` | `{"languages": {"<lang>": {"present", "bytes", "installedBytes", "partialBytes"}}}` — `present` is true when every file verifies, `bytes` is what the language costs in total, and `partialBytes` is what an interrupted download left to resume from. Hashes every installed file, so call it on demand rather than on a timer. |
+| `DELETE /models/{language}` | `{"removed": "<language>"}` — deletes that language's files (including `.part` scratch files) and takes its engine down. **404** for a language not in the manifest; **500** with a `detail` if the files could not be deleted, in which case the engine is rebuilt from what is left. |
 | `GET /voices/{language}` | `{"voices": [...]}` — names for `en`; empty for the single-speaker MMS languages. |
 
 **`state` is the authoritative verdict on a job.** A *cancelled* job still reports a populated `sampleRate` and a non-zero `durationMs`, and leaves a truncated but structurally valid WAV at `out_path`. A client that branches on the data fields rather than on `state` will treat a truncated take as a success.

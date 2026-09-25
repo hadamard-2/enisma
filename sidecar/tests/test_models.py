@@ -741,3 +741,37 @@ def test_cancel_during_a_retry_wait_keeps_the_part_file(
     part = tmp_path / "models" / "xx" / "thing.bin.part"
     assert not target.exists()
     assert part.exists() and part.stat().st_size > 0
+
+
+def test_every_file_of_a_language_lives_under_that_language_s_folder():
+    # `remove` deletes one folder per language. That is only the whole
+    # language if nothing it owns lives anywhere else.
+    for lang in models.manifest()["languages"]:
+        for entry in models.files_for(lang):
+            assert entry["path"].startswith(f"{lang}/"), entry["path"]
+
+
+def test_remove_deletes_finished_and_scratch_files_alike(tmp_path, monkeypatch):
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path)
+    (tmp_path / "am").mkdir()
+    (tmp_path / "am" / "model.onnx").write_bytes(b"model")
+    (tmp_path / "am" / "tokens.txt.part").write_bytes(b"half")
+    (tmp_path / "ti").mkdir()
+    (tmp_path / "ti" / "model.onnx").write_bytes(b"other")
+
+    models.remove("am")
+
+    assert not (tmp_path / "am").exists()
+    assert (tmp_path / "ti" / "model.onnx").exists()
+
+
+def test_removing_a_language_that_is_not_there_is_not_an_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path)
+    models.remove("om")
+    assert not (tmp_path / "om").exists()
+
+
+def test_remove_refuses_a_language_the_manifest_does_not_know(tmp_path, monkeypatch):
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path)
+    with pytest.raises(KeyError):
+        models.remove("../etc")

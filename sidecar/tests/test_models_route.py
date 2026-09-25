@@ -154,3 +154,55 @@ def test_a_cancelled_acquisition_does_not_try_to_bring_the_language_up(monkeypat
     _await_terminal(client, job_id)
 
     assert registered == []
+
+
+def test_deleting_a_language_takes_its_engine_down_and_its_files_away(tmp_path, monkeypatch):
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path)
+    (tmp_path / "am").mkdir()
+    (tmp_path / "am" / "model.onnx").write_bytes(b"model")
+    monkeypatch.setitem(server.ENGINES_BY_LANGUAGE, "am", object())
+    client = _client(monkeypatch)
+
+    resp = client.delete("/models/am", headers=AUTH)
+
+    assert resp.status_code == 200
+    assert resp.json() == {"removed": "am"}
+    assert "am" not in server.ENGINES_BY_LANGUAGE
+    assert not (tmp_path / "am").exists()
+    assert "am" not in client.get("/health", headers=AUTH).json()["engines"]
+
+
+def test_deleting_a_language_with_nothing_on_disk_succeeds(tmp_path, monkeypatch):
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path)
+    client = _client(monkeypatch)
+    assert client.delete("/models/ti", headers=AUTH).status_code == 200
+
+
+def test_deleting_an_unknown_language_is_a_404(monkeypatch):
+    client = _client(monkeypatch)
+    assert client.delete("/models/xx", headers=AUTH).status_code == 404
+
+
+def test_deleting_needs_the_bearer_token(monkeypatch):
+    client = _client(monkeypatch)
+    assert client.delete("/models/am").status_code == 401
+
+
+def test_a_failed_delete_brings_the_engine_back_and_says_why(monkeypatch):
+    # Most likely on Windows, where a file still open cannot be deleted. The
+    # engine was taken down first, so it has to be put back or the language
+    # would sit on disk unable to speak until a restart.
+    def refuse(language):
+        raise PermissionError("model.onnx is in use")
+
+    registered = []
+    monkeypatch.setattr(models, "remove", refuse)
+    monkeypatch.setattr(server, "register_language", lambda lang: registered.append(lang))
+    monkeypatch.setitem(server.ENGINES_BY_LANGUAGE, "am", object())
+    client = _client(monkeypatch)
+
+    resp = client.delete("/models/am", headers=AUTH)
+
+    assert resp.status_code == 500
+    assert "in use" in resp.json()["detail"]
+    assert registered == ["am"]

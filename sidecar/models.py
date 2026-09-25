@@ -166,6 +166,21 @@ def status() -> dict[str, dict]:
     return out
 
 
+def remove(language: str) -> None:
+    """Delete everything a language has on disk: finished files and scratch alike.
+
+    One folder per language holds all of it (a test pins that), so this is a
+    single tree removal. A language with nothing on disk is not an error — the
+    user asked for it to be gone, and it is. Refuses a name the manifest does
+    not know, so a stray path segment can never reach `rmtree`.
+    """
+    if language not in manifest()["languages"]:
+        raise KeyError(language)
+    folder = MODELS_ROOT / language
+    if folder.exists():
+        shutil.rmtree(folder)
+
+
 def _always() -> bool:
     return True
 
