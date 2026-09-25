@@ -5,18 +5,22 @@ other path — OCR, synthesis, export — runs entirely on-device, and
 `install_from_dir` is the route for a machine that has no usable connection at
 all: the same files, carried in on a stick and verified against the same hashes.
 
-Deliberately NOT here: retry with backoff, and gating project creation on model
-presence. A download that stops is resumed by asking for it again, not by this
-module deciding on its own when to try.
+Retry is deliberately narrow: a connection that drops after bytes have started
+arriving is retried a few times within one download, because that is a blip
+the user should never have to see. Nothing is retried across launches, and a
+machine that is offline from the start is told so at once. Gating project
+creation on model presence is also not here.
 """
 
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
 import shutil
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -35,6 +39,17 @@ TIMEOUT_SECONDS = 30
 # responsiveness budget: on a 100 KB/s link 256 KiB is a check every ~2.5s.
 _CHUNK = 1024 * 256
 
+# Waits before each retry of a connection that dropped mid-download: about 40
+# seconds in all, enough for a Wi-Fi reconnect or a router hiccup and short
+# enough that nobody stares at a stuck bar for minutes. The count resets
+# whenever an attempt receives bytes, so separate blips across a long download
+# do not add up to a failure.
+RETRY_DELAYS: tuple[float, ...] = (2, 8, 30)
+
+# How often a retry wait asks whether to keep going. Keeps Cancel as prompt
+# during a wait as it is between chunks.
+_WAIT_STEP = 0.25
+
 OnProgress = Callable[[str, float], None]
 # Asked between chunks whether to keep going. Default: always.
 ShouldContinue = Callable[[], bool]
@@ -46,6 +61,43 @@ class Cancelled(Exception):
     Distinct from a failure: the partial download is deliberately kept, so
     asking again resumes rather than starting the file over.
     """
+
+
+class _EndedEarly(ConnectionError):
+    """The body stopped short of the file's size without the socket saying so."""
+
+
+class _Tally:
+    """Bytes this fetch call has received from the network, across files and attempts."""
+
+    def __init__(self) -> None:
+        self.bytes = 0
+
+
+def _is_dropped_connection(exc: BaseException) -> bool:
+    """Whether a failure is the kind that waiting and resuming can fix.
+
+    A 5xx is the host having a bad moment. Every 4xx (and 429, which never
+    reaches here as an HTTPError) is an answer that will not change.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        return 500 <= exc.code < 600
+    return isinstance(
+        exc,
+        (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException),
+    )
+
+
+def _wait(seconds: float, keep_going: ShouldContinue) -> None:
+    """Sleep before a retry, stopping at once if the user cancels."""
+    deadline = time.monotonic() + seconds
+    while True:
+        if not keep_going():
+            raise Cancelled()
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return
+        time.sleep(min(_WAIT_STEP, left))
 
 
 def manifest() -> dict:
@@ -188,6 +240,7 @@ def fetch(
     entries = files_for(language)
     total = sum(e["size"] for e in entries) or 1
     done = 0
+    tally = _Tally()
 
     for entry in entries:
         target = MODELS_ROOT / entry["path"]
@@ -198,53 +251,98 @@ def fetch(
 
         target.parent.mkdir(parents=True, exist_ok=True)
         part = target.with_suffix(target.suffix + ".part")
-        have = part.stat().st_size if part.is_file() else 0
 
-        request = urllib.request.Request(entry["url"])
-        if have:
-            request.add_header("Range", f"bytes={have}-")
-
-        # No cleanup handler: every exit but success deliberately leaves the
-        # scratch file in place, because that is what the next attempt resumes
-        # from — a cancel, a rate limit and a dropped connection alike. Only a
-        # checksum failure destroys it, in `_install`.
-        try:
-            opened = urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS)
-        except urllib.error.HTTPError as err:
-            if err.code != 429:
-                raise
-            # Deliberately not retried here. The window is measured in
-            # minutes, and sleeping through it inside a several-hundred-
-            # megabyte download is indistinguishable from the stall the
-            # timeout above exists to prevent — so the user is told how long
-            # and left to decide, which they can afford to do because nothing
-            # already downloaded is lost.
-            raise RuntimeError(
-                "the model host is rate limiting this connection. "
-                f"{describe_wait(rate_limit_wait(err.headers))} "
-                "Nothing is lost — the download resumes where it stopped."
-            ) from err
-
-        with opened as response:
-            # 206 means the server honoured the Range and is sending the
-            # remainder. Anything else — a 200, or a file:// URL, which has no
-            # status at all — is the whole file again, so the scratch file
-            # starts over rather than being appended to.
-            resuming = getattr(response, "status", None) == 206
-            if not resuming:
-                have = 0
-            done += have
-            on_progress(entry["path"], min(done / total, 1.0))
-
-            with part.open("ab" if resuming else "wb") as out:
-                while chunk := response.read(_CHUNK):
-                    if not keep_going():
-                        raise Cancelled()
-                    out.write(chunk)
-                    done += len(chunk)
-                    on_progress(entry["path"], min(done / total, 1.0))
+        failures = 0
+        while True:
+            before = tally.bytes
+            try:
+                _download_file(entry, target, part, done, total, on_progress, keep_going, tally)
+                break
+            except Exception as exc:  # noqa: BLE001 - classified just below
+                # Nothing received yet in this call means the connection was
+                # never there: offline from the start, not dropped.
+                if tally.bytes == 0 or not _is_dropped_connection(exc):
+                    raise
+                if tally.bytes > before:
+                    failures = 0
+                if failures == len(RETRY_DELAYS):
+                    raise RuntimeError(
+                        f"the connection kept dropping while downloading {target.name} "
+                        f"({exc}). Nothing is lost — the download resumes where it stopped."
+                    ) from exc
+                _wait(RETRY_DELAYS[failures], keep_going)
+                failures += 1
 
         _install(part, target, entry["sha256"])
+        done += entry["size"]
+
+
+def _download_file(
+    entry: dict,
+    target: Path,
+    part: Path,
+    base: int,
+    total: int,
+    on_progress: OnProgress,
+    keep_going: ShouldContinue,
+    tally: _Tally,
+) -> None:
+    """One attempt at one file, appending to its `.part` where the host allows.
+
+    `base` is what the files before this one already account for, so progress
+    stays whole-language. Raises on any failure; the caller decides whether
+    that failure is worth another attempt.
+    """
+    have = part.stat().st_size if part.is_file() else 0
+
+    request = urllib.request.Request(entry["url"])
+    if have:
+        request.add_header("Range", f"bytes={have}-")
+
+    # No cleanup handler: every exit but success deliberately leaves the
+    # scratch file in place, because that is what the next attempt resumes
+    # from — a cancel, a rate limit and a dropped connection alike. Only a
+    # checksum failure destroys it, in `_install`.
+    try:
+        opened = urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS)
+    except urllib.error.HTTPError as err:
+        if err.code != 429:
+            raise
+        # Deliberately not retried here. The window is measured in minutes,
+        # and sleeping through it inside a several-hundred-megabyte download
+        # is indistinguishable from the stall the timeout above exists to
+        # prevent — so the user is told how long and left to decide, which
+        # they can afford to do because nothing already downloaded is lost.
+        raise RuntimeError(
+            "the model host is rate limiting this connection. "
+            f"{describe_wait(rate_limit_wait(err.headers))} "
+            "Nothing is lost — the download resumes where it stopped."
+        ) from err
+
+    with opened as response:
+        # 206 means the server honoured the Range and is sending the
+        # remainder. Anything else — a 200, or a file:// URL, which has no
+        # status at all — is the whole file again, so the scratch file starts
+        # over rather than being appended to.
+        resuming = getattr(response, "status", None) == 206
+        if not resuming:
+            have = 0
+        on_progress(entry["path"], min((base + have) / total, 1.0))
+
+        with part.open("ab" if resuming else "wb") as out:
+            while chunk := response.read(_CHUNK):
+                if not keep_going():
+                    raise Cancelled()
+                out.write(chunk)
+                have += len(chunk)
+                tally.bytes += len(chunk)
+                on_progress(entry["path"], min((base + have) / total, 1.0))
+
+    # A body cut short without a socket error would otherwise go on to fail
+    # its checksum, and a checksum failure destroys the scratch file — turning
+    # a resumable blip into starting the file over.
+    if have < entry["size"]:
+        raise _EndedEarly(f"{target.name} stopped after {have} of {entry['size']} bytes")
 
 
 def install_from_dir(

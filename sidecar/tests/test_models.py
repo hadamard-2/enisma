@@ -14,7 +14,9 @@ the one behaviour under test would never fire.
 import hashlib
 import http.server
 import re
+import socket
 import threading
+import time
 import urllib.error
 
 import pytest
@@ -513,3 +515,229 @@ def test_import_refuses_a_folder_holding_the_wrong_build(tmp_path, monkeypatch):
 
     assert not (tmp_path / "models" / "xx" / "thing.bin").exists()
     assert not (tmp_path / "models" / "xx" / "thing.bin.part").exists()
+
+
+class _Script:
+    """A loopback server that answers each request with the next scripted step.
+
+    ("drop", n): send the first n bytes of what was asked for, then cut the
+    connection. ("status", code): answer with that status and no body.
+    ("serve",): send what was asked for. Range is honoured throughout, so a
+    retry resumes from what the drop left on disk.
+    """
+
+    def __init__(self, payload: bytes, steps: list[tuple]):
+        self.ranges: list[str | None] = []
+        remaining = iter(steps)
+        ranges = self.ranges
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                header = self.headers.get("Range")
+                ranges.append(header)
+                step = next(remaining)
+                if step[0] == "status":
+                    self.send_response(step[1])
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                start = int(header.split("=")[1].split("-")[0]) if header else 0
+                body = payload[start:]
+                if header:
+                    self.send_response(206)
+                    self.send_header(
+                        "Content-Range", f"bytes {start}-{len(payload) - 1}/{len(payload)}"
+                    )
+                else:
+                    self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if step[0] == "drop":
+                    self.wfile.write(body[: step[1]])
+                    self.wfile.flush()
+                    self.close_connection = True
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                    return
+                self.wfile.write(body)
+
+            def finish(self):
+                try:
+                    super().finish()
+                except OSError:
+                    pass  # the connection was cut on purpose
+
+            def log_message(self, *args):
+                pass
+
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+        host, port = self._server.server_address[:2]
+        self.url = f"http://{host}:{port}/thing.bin"
+
+    def stop(self):
+        self._server.shutdown()
+
+
+def _record_waits(monkeypatch) -> list[float]:
+    waits: list[float] = []
+    monkeypatch.setattr(models, "_wait", lambda seconds, keep_going: waits.append(seconds))
+    return waits
+
+
+def test_a_connection_that_drops_mid_file_is_resumed_on_its_own(
+    tmp_path, monkeypatch, big_payload
+):
+    good = hashlib.sha256(big_payload).hexdigest()
+    script = _Script(big_payload, [("drop", 500_000), ("serve",)])
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(script.url, big_payload, good))
+    waits = _record_waits(monkeypatch)
+
+    try:
+        models.fetch("xx", lambda path, fraction: None)
+    finally:
+        script.stop()
+
+    assert (tmp_path / "models" / "xx" / "thing.bin").read_bytes() == big_payload
+    assert waits == [2]
+    # The retry resumed; it did not start the file over.
+    assert script.ranges[0] is None
+    assert script.ranges[1] is not None and script.ranges[1] != "bytes=0-"
+
+
+def test_a_machine_offline_from_the_start_is_told_at_once(tmp_path, monkeypatch):
+    # Nothing has arrived, so this is not a dropped connection: waiting 40
+    # seconds before saying "no connection" helps nobody.
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    url = f"http://127.0.0.1:{port}/thing.bin"
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(url, b"x" * 10, "0" * 64))
+    waits = _record_waits(monkeypatch)
+
+    with pytest.raises(urllib.error.URLError):
+        models.fetch("xx", lambda path, fraction: None)
+
+    assert waits == []
+
+
+def test_a_host_that_keeps_failing_is_given_up_on_after_three_retries(
+    tmp_path, monkeypatch, big_payload
+):
+    good = hashlib.sha256(big_payload).hexdigest()
+    script = _Script(
+        big_payload,
+        [("drop", 300_000), ("status", 503), ("status", 503), ("status", 503)],
+    )
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(script.url, big_payload, good))
+    waits = _record_waits(monkeypatch)
+
+    try:
+        with pytest.raises(RuntimeError, match="kept dropping") as caught:
+            models.fetch("xx", lambda path, fraction: None)
+    finally:
+        script.stop()
+
+    assert waits == [2, 8, 30]
+    assert "Nothing is lost" in str(caught.value)
+    # What arrived before the host went down is kept for the next attempt.
+    assert (tmp_path / "models" / "xx" / "thing.bin.part").stat().st_size > 0
+
+
+def test_progress_between_failures_resets_the_retry_count(
+    tmp_path, monkeypatch, big_payload
+):
+    # Three separate blips across a long download must not end a download that
+    # is still making progress.
+    good = hashlib.sha256(big_payload).hexdigest()
+    script = _Script(
+        big_payload,
+        [
+            ("drop", 300_000),
+            ("status", 503),
+            ("status", 503),
+            ("drop", 300_000),
+            ("status", 503),
+            ("status", 503),
+            ("serve",),
+        ],
+    )
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(script.url, big_payload, good))
+    waits = _record_waits(monkeypatch)
+
+    try:
+        models.fetch("xx", lambda path, fraction: None)
+    finally:
+        script.stop()
+
+    assert waits == [2, 8, 30, 2, 8, 30]
+    assert (tmp_path / "models" / "xx" / "thing.bin").read_bytes() == big_payload
+
+
+def test_a_client_error_after_progress_is_not_retried(tmp_path, monkeypatch, big_payload):
+    # A 404 will not fix itself however long we wait.
+    good = hashlib.sha256(big_payload).hexdigest()
+    script = _Script(big_payload, [("drop", 300_000), ("status", 404)])
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(script.url, big_payload, good))
+    waits = _record_waits(monkeypatch)
+
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            models.fetch("xx", lambda path, fraction: None)
+    finally:
+        script.stop()
+
+    assert caught.value.code == 404
+    assert waits == [2]
+
+
+def test_a_wait_stops_as_soon_as_cancel_is_asked():
+    started = time.monotonic()
+    with pytest.raises(models.Cancelled):
+        models._wait(30, lambda: False)
+    assert time.monotonic() - started < 1
+
+
+def test_a_wait_lasts_its_time_when_nobody_cancels():
+    started = time.monotonic()
+    models._wait(0.3, lambda: True)
+    assert 0.3 <= time.monotonic() - started < 1
+
+
+def test_cancel_during_a_retry_wait_keeps_the_part_file(
+    tmp_path, monkeypatch, big_payload
+):
+    # The controller's ruling: a Cancel that lands during the retry wait
+    # (rather than between chunks) must still leave the .part file in place,
+    # exactly like a cancel during the download itself. This exercises the
+    # real `_wait`, with short delays so the test does not sit for 40 seconds.
+    good = hashlib.sha256(big_payload).hexdigest()
+    script = _Script(big_payload, [("drop", 300_000), ("serve",)])
+    monkeypatch.setattr(models, "MODELS_ROOT", tmp_path / "models")
+    monkeypatch.setattr(models, "manifest", lambda: _http_manifest(script.url, big_payload, good))
+    monkeypatch.setattr(models, "RETRY_DELAYS", (0.3, 0.3, 0.3))
+
+    cancel_after = object()
+    calls = []
+
+    def keep_going():
+        calls.append(1)
+        # Let the first attempt's chunks through (it drops on its own), then
+        # cancel partway through the retry wait that follows.
+        return len(calls) <= 3
+
+    try:
+        with pytest.raises(models.Cancelled):
+            models.fetch("xx", lambda path, fraction: None, keep_going)
+    finally:
+        script.stop()
+
+    target = tmp_path / "models" / "xx" / "thing.bin"
+    part = tmp_path / "models" / "xx" / "thing.bin.part"
+    assert not target.exists()
+    assert part.exists() and part.stat().st_size > 0
