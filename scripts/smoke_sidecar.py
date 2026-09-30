@@ -102,6 +102,8 @@ class Sidecar:
 
 
 def main() -> int:
+    # The results include IPA; Windows consoles default to cp1252, which can't encode it.
+    sys.stdout.reconfigure(encoding="utf-8")
     binary = Path(sys.argv[1]) if len(sys.argv) > 1 else default_binary()
     if not binary.is_file():
         fail(f"no binary at {binary}")
