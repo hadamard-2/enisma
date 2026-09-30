@@ -175,7 +175,7 @@
       "context": "Replaces the Import button label while the PDF's text is being extracted, before the project is created. Takes about a second. Note the single-character ellipsis."
     },
     "scannedWarning": {
-      "message": "እዚ PDF ስካን ዝተገብረ ይመስል — ካብ {total} ገጻት {empty} ናይ ጽሑፍ ንብርብር የብለንን። Enisma ስካን ዝተገብረ ጽሑፍ ክሳብ ሕጂ ከንብብ ስለዘይክእል፣ መብዛሕትአን ገጻት ባዶ ክኾና እየን።",
+      "message": "እዚ PDF ስካን ዝተገብረ ይመስል — ካብ {total} ገጻት {empty} ናይ ጽሑፍ ንብርብር የብለንን። Enisma ስካን ዝተገብረ ጽሑፍ ክሳብ ሕጂ ከንብብ ስለዘይክእል፣ መብዛሕትአን ገጻት ባዶ ክኾና ይኽእላ እየን።",
       "context": "Warning inside the import dialog, shown before the project is created. {empty} and {total} are page counts. The user can still choose to import."
     },
     "importAnyway": {
@@ -245,7 +245,7 @@
       "context": "Status line when an earlier download stopped part-way. {already} and {total} are sizes such as '40 MB'."
     },
     "voiceUnloadable": {
-      "message": "ተጻዒኑ፣ ግን ክጽዕን ኣይከኣለን",
+      "message": "ተጻዒኑ፣ ግን ክሰርሕ ኣይከኣለን",
       "context": "Status line when the voice files are present but the engine failed to load them."
     },
     "voiceInstalling": {
@@ -781,7 +781,7 @@
       "context": "Shown when an earlier download stopped part-way. {already} and {total} are sizes like '43 MB' and '114 MB'. Reassures the user the rest is all that is left."
     },
     "unloadable": {
-      "message": "ድምጺ ተጻዒኑ ኣሎ ግን ክጽዕን ኣይከኣለን። ደጊምካ ምጽዓን ክፍተን ይግባእ።",
+      "message": "ድምጺ ተጻዒኑ ኣሎ ግን ክሰርሕ ኣይከኣለን። ደጊምካ ምጽዓን ክፍተን ይግባእ።",
       "context": "Shown when the model files are all present and verified but the engine still failed to load them. Reinstalling is the only thing the user can usefully try."
     },
     "failed": {
@@ -937,7 +937,7 @@
       "context": "Title of the dialog confirming that a language's voice model will be deleted."
     },
     "body": {
-      "message": "ናይ {language} ድምጺ ({size}) ይደምሰስ? ድሮ ዝሰራሕካዮ ድምጺ ምጽዋቱ ይቕጽል፤ ብ{language} ሓድሽ ድምጺ ምስራሕ ግን ደጊሙ የድልዮ።",
+      "message": "ናይ {language} ድምጺ ({size}) ይደምሰስ? ድሮ ዝሰራሕካዮ ናይ ድምጺ ቅዳሕ ምጽዋቱ ይቕጽል፤ ብ{language} ሓድሽ ናይ ድምጺ ቅዳሕ ንምስራሕ ግን ነቲ ድምጺ ደጊሙ የድልዮ።",
       "context": "Dialog body. {language} is a language name, {size} a size such as '114 MB'. 'Making new audio' means converting pages or exporting."
     },
     "cancel": {
@@ -1017,7 +1017,7 @@
       "context": "Placeholder and label of the floating book-wide search (Ctrl+Shift+F)."
     },
     "summary": {
-      "message": "{count} ውጽኢታት ኣብ {pages} ገጻት",
+      "message": "{count, plural, one {# ውጽኢት} other {# ውጽኢታት}} ኣብ {pages, plural, one {# ገጽ} other {# ገጻት}}",
       "context": "Shown beside the search field: how many matches, across how many pages. {count} and {pages} are numbers."
     },
     "none": {

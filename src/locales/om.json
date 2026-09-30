@@ -175,11 +175,11 @@
       "context": "Replaces the Import button label while the PDF's text is being extracted, before the project is created. Takes about a second. Note the single-character ellipsis."
     },
     "scannedWarning": {
-      "message": "PDF kun kan iskaanii fakkaata — fuulota {total} keessaa {empty} sarara barreeffamaa hin qaban. Enisma barreeffama iskaanii amma dubbisuu waan hin dandeenyeef, fuulonni hedduun duwwaa ta'u.",
+      "message": "PDF kun kan iskaanii fakkaata — fuulota {total} keessaa {empty} baqqaa barreeffamaa hin qaban. Enisma barreeffama iskaanii hanga ammaatti dubbisuu waan hin dandeenyeef, fuulonni hedduun duwwaa ta'uu danda'u.",
       "context": "Warning inside the import dialog, shown before the project is created. {empty} and {total} are page counts. The user can still choose to import."
     },
     "importAnyway": {
-      "message": "Haa ta'uyyuu galchi",
+      "message": "Ta'us galchi",
       "context": "Button. Confirms importing a PDF that appears to be scanned, accepting that most pages will be empty."
     }
   },
@@ -459,7 +459,7 @@
       "context": "Tooltip on the 'Page done' button when the page is not yet marked finished."
     },
     "noTextLayer": {
-      "message": "Fuulli kun sarara barreeffamaa hin qabu, kanaaf wanti baafamu hin jiru. Enisma barreeffama iskaanii amma dubbisuu hin danda'u — fuula kana as irratti barreessuu dandeessa.",
+      "message": "Fuulli kun baqqaa barreeffamaa hin qabu, kanaaf wanti baafamu hin jiru. Enisma barreeffama iskaanii hanga ammaatti dubbisuu hin danda'u — fuula kana as irratti barreessuu dandeessa.",
       "context": "Faint placeholder inside the empty text editor, shown when extraction ran and found no text on this page — typically a scanned page. Should make clear this is expected, not a failure, and that typing is the way forward."
     },
     "extracting": {
@@ -561,7 +561,7 @@
       "context": "Replaces the Cancel button after it is pressed. The engine only checks for a stop between chunks, so this can last up to a minute."
     },
     "stale": {
-      "message": "Kan yeroon isaa darbe",
+      "message": "Yeroon darbe",
       "context": "Badge on the audio player meaning the audio was made before the current text or settings. The audio still plays."
     },
     "noText": {
@@ -619,7 +619,7 @@
       "context": "One-line summary under the settings in the Export dialog. 'ready' pages already have matching audio and are reused; 'to synthesize' pages will be read aloud now; 'empty' pages have no text and are skipped."
     },
     "replacing": {
-      "message": "Fuulli {count} sagalee sagalee ykn saffisa biraatiin hojjetame qabu. Baasuun isa bakka buusa.",
+      "message": "Fuulli {count} waraabbii sagalee ykn saffisa biraatiin hojjetame qabu. Baasuun isa bakka buusa.",
       "context": "Warning in the Export dialog when exporting will overwrite audio the user made earlier with different settings."
     },
     "modelMissing": {
@@ -937,7 +937,7 @@
       "context": "Title of the dialog confirming that a language's voice model will be deleted."
     },
     "body": {
-      "message": "Sagalee {language} ({size}) haquu? Sagaleen ati duraan hojjette taphachuu itti fufa; sagalee haaraa {language}n hojjechuun garuu irra deebi'ee isa barbaada.",
+      "message": "Sagalee {language} ({size}) haquu? Waraabbiin sagalee ati duraan hojjette taphachuu itti fufa; waraabbii haaraa {language} irratti hojjechuun garuu sagalicha deebi'ee barbaada.",
       "context": "Dialog body. {language} is a language name, {size} a size such as '114 MB'. 'Making new audio' means converting pages or exporting."
     },
     "cancel": {
