@@ -1,4 +1,4 @@
-"""HearBook/Enisma sidecar — offline inference over loopback.
+"""Enisma sidecar — offline inference over loopback.
 
 A FastAPI server that the Rust/Tauri core spawns and supervises. It binds to an
 ephemeral loopback port, prints a one-line JSON handshake to stdout once it is
@@ -43,8 +43,8 @@ from tts import Engine
 
 log = logging.getLogger("sidecar")
 
-TOKEN_ENV = "HEARBOOK_SIDECAR_TOKEN"
-HOST_ENV = "HEARBOOK_SIDECAR_HOST"
+TOKEN_ENV = "ENISMA_SIDECAR_TOKEN"
+HOST_ENV = "ENISMA_SIDECAR_HOST"
 
 # The bearer token is supplied per-spawn by the Rust supervisor via the
 # environment (never argv, which is visible in process listings).
@@ -61,7 +61,7 @@ def _require_token(
         raise HTTPException(status_code=401, detail="invalid or missing bearer token")
 
 
-app = FastAPI(title="HearBook sidecar", version="0")
+app = FastAPI(title="Enisma sidecar", version="0")
 
 
 @app.get("/health")

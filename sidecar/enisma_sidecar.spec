@@ -1,7 +1,7 @@
-# PyInstaller spec for the HearBook sidecar — single-file binary.
+# PyInstaller spec for the Enisma sidecar — single-file binary.
 #
-# Build:  uv run pyinstaller --clean --noconfirm hearbook_sidecar.spec
-# Output: dist/hearbook-sidecar  (use scripts/build-sidecar.sh to install it
+# Build:  uv run pyinstaller --clean --noconfirm enisma_sidecar.spec
+# Output: dist/enisma-sidecar  (use scripts/build-sidecar.sh to install it
 #         into src-tauri/binaries/ with the required -<target-triple> suffix).
 #
 # Most of what follows is here because PyInstaller's static analysis cannot see
@@ -95,7 +95,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='hearbook-sidecar',
+    name='enisma-sidecar',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

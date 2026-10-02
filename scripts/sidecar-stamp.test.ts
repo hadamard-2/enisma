@@ -42,13 +42,13 @@ describe("sidecarInputs", () => {
       "models.py": "",
       "pyproject.toml": "",
       "uv.lock": "",
-      "hearbook_sidecar.spec": "",
+      "enisma_sidecar.spec": "",
       "models.json": "",
       "README.md": "",
     });
     writeFileSync(join(root, "sidecar", "tests", "test_x.py"), "");
     expect(sidecarInputs(join(root, "sidecar"))).toEqual([
-      "hearbook_sidecar.spec",
+      "enisma_sidecar.spec",
       "models.json",
       "models.py",
       "pyproject.toml",
@@ -93,7 +93,7 @@ describe("checkStamp", () => {
   });
 
   it("names the Windows binary with its extension", () => {
-    expect(binaryPath("/r", "x86_64-pc-windows-msvc")).toMatch(/hearbook-sidecar-x86_64-pc-windows-msvc\.exe$/);
-    expect(stampPath("/r", "x86_64-pc-windows-msvc")).toMatch(/hearbook-sidecar-x86_64-pc-windows-msvc\.stamp$/);
+    expect(binaryPath("/r", "x86_64-pc-windows-msvc")).toMatch(/enisma-sidecar-x86_64-pc-windows-msvc\.exe$/);
+    expect(stampPath("/r", "x86_64-pc-windows-msvc")).toMatch(/enisma-sidecar-x86_64-pc-windows-msvc\.stamp$/);
   });
 });

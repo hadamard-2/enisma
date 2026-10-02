@@ -1,6 +1,6 @@
-# HearBook sidecar
+# Enisma sidecar
 
-The offline inference sidecar for Enisma (internal name: HearBook). The Rust/Tauri core spawns and supervises this process; the React frontend never talks to it directly. It is a FastAPI server over loopback: the M0 harness (handshake, bearer token, `/health`) plus the M4 TTS routes — model acquisition, voices, and synthesis jobs. TTS runs English through Kokoro weights on `onnxruntime` (with `espeakng-loader` and `phonemizer` for grapheme-to-phoneme), and Amharic, Tigrigna and Oromo through MMS VITS models on `sherpa-onnx`. OCR is not here yet; it lands in a later milestone.
+The offline inference sidecar for Enisma. The Rust/Tauri core spawns and supervises this process; the React frontend never talks to it directly. It is a FastAPI server over loopback: the M0 harness (handshake, bearer token, `/health`) plus the M4 TTS routes — model acquisition, voices, and synthesis jobs. TTS runs English through Kokoro weights on `onnxruntime` (with `espeakng-loader` and `phonemizer` for grapheme-to-phoneme), and Amharic, Tigrigna and Oromo through MMS VITS models on `sherpa-onnx`. OCR is not here yet; it lands in a later milestone.
 
 ## Prerequisites
 
@@ -15,9 +15,9 @@ The supervisor passes configuration via environment variables (never argv):
 
 | Var | Meaning |
 | --- | --- |
-| `HEARBOOK_SIDECAR_TOKEN` | Per-spawn bearer token. **Required** — the sidecar refuses to start without it. Every request to a guarded route must send `Authorization: Bearer <token>`. |
-| `HEARBOOK_SIDECAR_HOST` | Bind host. Always `127.0.0.1` (loopback only — never `0.0.0.0`). |
-| `HEARBOOK_MODELS_DIR` | Where downloaded inference models live. **Required in practice.** Rust sets it to `<app data dir>/models`, beside `enisma.db` and `projects/`. Without it `models.py` falls back to a directory beside its own `__file__`, which in the frozen binary is PyInstaller's extraction directory — deleted on exit, so every launch would re-download hundreds of megabytes. |
+| `ENISMA_SIDECAR_TOKEN` | Per-spawn bearer token. **Required** — the sidecar refuses to start without it. Every request to a guarded route must send `Authorization: Bearer <token>`. |
+| `ENISMA_SIDECAR_HOST` | Bind host. Always `127.0.0.1` (loopback only — never `0.0.0.0`). |
+| `ENISMA_MODELS_DIR` | Where downloaded inference models live. **Required in practice.** Rust sets it to `<app data dir>/models`, beside `enisma.db` and `projects/`. Without it `models.py` falls back to a directory beside its own `__file__`, which in the frozen binary is PyInstaller's extraction directory — deleted on exit, so every launch would re-download hundreds of megabytes. |
 | `PYTHONUNBUFFERED` | Set to `1` so the handshake line is not stuck in a buffer (matters for the frozen binary). |
 
 ### Startup handshake
@@ -60,7 +60,7 @@ Every route takes the bearer token; a missing or wrong one is `401`.
 ./scripts/build-sidecar.sh
 ```
 
-This runs PyInstaller against `hearbook_sidecar.spec` and copies the result to `src-tauri/binaries/hearbook-sidecar-<target-triple>` (the suffix Tauri's `externalBin` resolution requires). The result is a single ~160 MB file; the models it downloads at runtime are not in it.
+This runs PyInstaller against `enisma_sidecar.spec` and copies the result to `src-tauri/binaries/enisma-sidecar-<target-triple>` (the suffix Tauri's `externalBin` resolution requires). The result is a single ~160 MB file; the models it downloads at runtime are not in it.
 
 The frozen binary also accepts `--check-espeak`, which phonemizes one word with espeak-ng, prints it as JSON and exits, needing no model and no token. `scripts/smoke_sidecar.py` runs that check and then exercises a real install, synthesis and delete against the frozen binary.
 

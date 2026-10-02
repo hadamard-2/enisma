@@ -17,9 +17,9 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-const TOKEN_ENV: &str = "HEARBOOK_SIDECAR_TOKEN";
-const HOST_ENV: &str = "HEARBOOK_SIDECAR_HOST";
-const MODELS_ENV: &str = "HEARBOOK_MODELS_DIR";
+const TOKEN_ENV: &str = "ENISMA_SIDECAR_TOKEN";
+const HOST_ENV: &str = "ENISMA_SIDECAR_HOST";
+const MODELS_ENV: &str = "ENISMA_MODELS_DIR";
 const LOOPBACK: &str = "127.0.0.1";
 
 /// Subdirectory of the app data directory that holds the downloaded inference
@@ -266,7 +266,7 @@ fn build_command(
 
     #[cfg(not(debug_assertions))]
     let command = shell
-        .sidecar("hearbook-sidecar")
+        .sidecar("enisma-sidecar")
         .map_err(|e| e.to_string())?;
 
     Ok(command

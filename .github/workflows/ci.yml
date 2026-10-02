@@ -46,7 +46,7 @@ jobs:
       # anything, and the tests do not use the sidecar, so an empty stand-in
       # is enough here.
       - name: Stand-in sidecar binary
-        run: touch src-tauri/binaries/hearbook-sidecar-x86_64-unknown-linux-gnu
+        run: touch src-tauri/binaries/enisma-sidecar-x86_64-unknown-linux-gnu
 
       - name: Rust tests
         working-directory: src-tauri

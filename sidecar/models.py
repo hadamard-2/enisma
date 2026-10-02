@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Callable
 
 _HERE = Path(__file__).parent
-MODELS_ROOT = Path(os.environ.get("HEARBOOK_MODELS_DIR", _HERE / "models"))
+MODELS_ROOT = Path(os.environ.get("ENISMA_MODELS_DIR", _HERE / "models"))
 
 # Applied to the connection and to every read. Without it a stalled socket
 # blocks the job thread forever, and because a wedged job never reaches a

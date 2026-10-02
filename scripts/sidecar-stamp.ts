@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Build inputs besides the Python modules themselves. */
-const NAMED_INPUTS = ["pyproject.toml", "uv.lock", "hearbook_sidecar.spec", "models.json"];
+const NAMED_INPUTS = ["pyproject.toml", "uv.lock", "enisma_sidecar.spec", "models.json"];
 
 /** Every file whose change should force a rebuild, by name, sorted. Tests are not among them. */
 export function sidecarInputs(sidecarDir: string): string[] {
@@ -51,11 +51,11 @@ function currentStamp(repoRoot: string): string {
 
 export function binaryPath(repoRoot: string, triple: string): string {
   const ext = triple.includes("windows") ? ".exe" : "";
-  return join(repoRoot, "src-tauri", "binaries", `hearbook-sidecar-${triple}${ext}`);
+  return join(repoRoot, "src-tauri", "binaries", `enisma-sidecar-${triple}${ext}`);
 }
 
 export function stampPath(repoRoot: string, triple: string): string {
-  return join(repoRoot, "src-tauri", "binaries", `hearbook-sidecar-${triple}.stamp`);
+  return join(repoRoot, "src-tauri", "binaries", `enisma-sidecar-${triple}.stamp`);
 }
 
 export function writeStamp(repoRoot: string, triple: string): void {

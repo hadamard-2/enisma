@@ -7,7 +7,7 @@ starts the binary, installs one MMS language from the pinned URLs (114 MB),
 synthesizes a sentence, checks espeak-ng separately, deletes the language, and
 records how long startup and a model-status check took.
 
-Usage: python scripts/smoke_sidecar.py [path/to/hearbook-sidecar-<triple>]
+Usage: python scripts/smoke_sidecar.py [path/to/enisma-sidecar-<triple>]
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def default_binary() -> Path:
         ["rustc", "--print", "host-tuple"], check=True, capture_output=True, text=True
     ).stdout.strip()
     ext = ".exe" if "windows" in triple else ""
-    return REPO / "src-tauri" / "binaries" / f"hearbook-sidecar-{triple}{ext}"
+    return REPO / "src-tauri" / "binaries" / f"enisma-sidecar-{triple}{ext}"
 
 
 def fail(message: str) -> None:
@@ -45,8 +45,8 @@ class Sidecar:
         self.token = secrets.token_hex(16)
         env = {
             **os.environ,
-            "HEARBOOK_SIDECAR_TOKEN": self.token,
-            "HEARBOOK_MODELS_DIR": str(models_dir),
+            "ENISMA_SIDECAR_TOKEN": self.token,
+            "ENISMA_MODELS_DIR": str(models_dir),
         }
         started = time.monotonic()
         # stdin stays open: the sidecar exits when it closes.

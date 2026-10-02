@@ -2,7 +2,7 @@
 # Freeze the Python sidecar with PyInstaller and install it as a Tauri externalBin.
 #
 # Tauri resolves externalBin entries by appending the host target triple, so the
-# frozen binary must land at src-tauri/binaries/hearbook-sidecar-<triple>[.exe].
+# frozen binary must land at src-tauri/binaries/enisma-sidecar-<triple>[.exe].
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,13 +19,13 @@ esac
 echo "Building sidecar for $TRIPLE ..."
 cd "$SIDECAR_DIR"
 uv sync
-uv run pyinstaller --clean --noconfirm hearbook_sidecar.spec
+uv run pyinstaller --clean --noconfirm enisma_sidecar.spec
 
 mkdir -p "$BIN_DIR"
-cp "$SIDECAR_DIR/dist/hearbook-sidecar$EXT" "$BIN_DIR/hearbook-sidecar-$TRIPLE$EXT"
+cp "$SIDECAR_DIR/dist/enisma-sidecar$EXT" "$BIN_DIR/enisma-sidecar-$TRIPLE$EXT"
 
 # Tie the binary to the sources it was built from, so `tauri build` can refuse
 # a stale one (see scripts/sidecar-stamp.ts).
 bun "$REPO_ROOT/scripts/sidecar-stamp.ts" write
 
-echo "Installed: $BIN_DIR/hearbook-sidecar-$TRIPLE$EXT"
+echo "Installed: $BIN_DIR/enisma-sidecar-$TRIPLE$EXT"

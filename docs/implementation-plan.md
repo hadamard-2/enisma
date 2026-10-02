@@ -1,6 +1,6 @@
 # Enisma — Backend Implementation Plan
 
-> Internal name: **HearBook**. User-facing name: **Enisma**. This plan covers the backend: the PDF → text-extraction → text-to-speech → export pipeline, plus persistence. When it was written the front-end ran on mock data; M1–M6 replaced that with real, on-device functionality end to end, including export and download/packaging. Sections were revised on 2026-09-25 to describe what was actually built; each milestone's own design doc under `docs/superpowers/specs/` records how and why it diverged from the original plan.
+> This plan covers the backend: the PDF → text-extraction → text-to-speech → export pipeline, plus persistence. When it was written the front-end ran on mock data; M1–M6 replaced that with real, on-device functionality end to end, including export and download/packaging. Sections were revised on 2026-09-25 to describe what was actually built; each milestone's own design doc under `docs/superpowers/specs/` records how and why it diverged from the original plan.
 
 ## Goals & non-negotiables
 
@@ -52,7 +52,7 @@ sidecar/
   prepare.py              text preparation: numbers to words, uroman, per-model alphabet strip
   guards.py               startup and pre-synthesis guards that turn silent failures into errors
   models.py, models.json  manifest, download / folder install, SHA-256 verification
-  hearbook_sidecar.spec   PyInstaller spec
+  enisma_sidecar.spec   PyInstaller spec
 ```
 
 **HTTP contract (all bound to `127.0.0.1`, bearer token required).** Long work is a job: `POST` returns a `jobId` at once, `GET /jobs/{id}` reports progress, `DELETE /jobs/{id}` cancels.
@@ -69,7 +69,7 @@ sidecar/
 
 There is no extraction route: extraction runs in the webview (§2). Export's route is M5 work.
 
-Rust spawns the sidecar at startup, reads the `port`/`ready` handshake from stdout, passes the bearer token and `HEARBOOK_MODELS_DIR` via env, waits for `/health`, restarts on crash, and kills it on app exit. The frontend never talks to the sidecar directly — it calls typed Tauri commands that proxy to it (keeps the token/port internal, avoids CORS).
+Rust spawns the sidecar at startup, reads the `port`/`ready` handshake from stdout, passes the bearer token and `ENISMA_MODELS_DIR` via env, waits for `/health`, restarts on crash, and kills it on app exit. The frontend never talks to the sidecar directly — it calls typed Tauri commands that proxy to it (keeps the token/port internal, avoids CORS).
 
 ### 2. Text extraction (pdf.js)
 
@@ -245,10 +245,10 @@ An export meets every page in the book, not only the one the user is looking at,
 
 **Packaging, built in M4.**
 
-- `sidecar/hearbook_sidecar.spec` freezes the sidecar as a PyInstaller onefile binary of about 160 MB, with no torch.
-- `scripts/build-sidecar.sh` installs it as `src-tauri/binaries/hearbook-sidecar-<target-triple>`, which is where Tauri's `externalBin` looks.
+- `sidecar/enisma_sidecar.spec` freezes the sidecar as a PyInstaller onefile binary of about 160 MB, with no torch.
+- `scripts/build-sidecar.sh` installs it as `src-tauri/binaries/enisma-sidecar-<target-triple>`, which is where Tauri's `externalBin` looks.
 - The frozen binary was verified to start and to synthesize both English and Amharic.
-- Rust hands the sidecar `HEARBOOK_MODELS_DIR`, so models survive the onefile's temp extraction.
+- Rust hands the sidecar `ENISMA_MODELS_DIR`, so models survive the onefile's temp extraction.
 - A guard turns espeak-ng's 159-character data-path limit into a readable error instead of a silent exit.
 
 **Built in M6:**

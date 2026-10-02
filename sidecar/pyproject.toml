@@ -1,7 +1,7 @@
 [project]
-name = "hearbook-sidecar"
+name = "enisma-sidecar"
 version = "0.1.0"
-description = "HearBook/Enisma offline inference sidecar (FastAPI over loopback)"
+description = "Enisma offline inference sidecar (FastAPI over loopback)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
